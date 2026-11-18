@@ -1,0 +1,2276 @@
+<!DOCTYPE html>
+<html lang="ru" data-ngui="micro">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Сколько энергии и воды тратит нейросеть</title>
+<style>
+/* The embeddable micro answer (src/render/ngui.py): the CONTENT of the host's
+   "Персональный ответ" card, drawn in the visual language of the NextGen UI
+   site (the persona screens of ai_journey_screensaver.html: paper cards on a
+   near-black page, a panel per widget, an uppercase accent label, pill chips,
+   tiles with an accent ring, SB Sans Display for numbers).
+
+   Two axes, as on the site:
+     * the palette (gamma): :root[data-gamma=brand|emerald|warm] -- the
+       accent, its soft/mid tones and the canvas series follow it;
+     * the mode: :root.dark (the site's dark look, the values below are the
+       screensaver's own tokens) or light (the same system on white).
+   The host's tokens, when it shares them, still override ours (ngui_embed.js),
+   so the names the host uses (--sbs-* / --sberai-*) are kept.
+
+   Scoped under `.ngui` so the same rules can later be shipped as a host-side
+   stylesheet (option b/c in src/render/ngui.py) without leaking into the host. */
+
+/* ------------------------------------------------------------------ tokens */
+:root {
+  /* light mode, brand gamma (the default when nothing is set) */
+  --sbs-accent: #0b6fbf;          /* fills, rings, the slider */
+  --sbs-accent-strong: #0b6fbf;   /* accent TEXT and the filled button (>= 4.5:1) */
+  --sbs-accent-soft: #e8f3ff;     /* a highlighted tile, the takeaways card */
+  --sbs-brand: #515dad;
+  --ngui-accent-mid: #c5e0fa;     /* a lit chip, a ring on a soft tile */
+  --ngui-accent-solid: #0b6fbf;   /* a FILLED accent: the active button, a check */
+  --ngui-on-accent: #ffffff;      /* text on it: white, >= 4.6:1 in every palette and mode */
+  --ngui-ok-solid: #12804a;       /* the filled "correct" mark, white check on it */
+  --ngui-on-series: #ffffff;      /* a label on a series colour (pie slices) */
+
+  --ngui-text: #0b0c10;           /* ink */
+  --ngui-body: #2a2f37;           /* running text, one step softer than ink */
+  --ngui-subtle: #5c646f;         /* muted: labels, hints (5.5:1 on the panel) */
+  --ngui-faint: #98a1ac;          /* decoration only, never text */
+  --ngui-card: #ffffff;           /* paper: the answer card */
+  --ngui-panel: #f4f6f9;          /* the widget panel */
+  --ngui-line: #e2e6eb;           /* hairlines and borders */
+  --ngui-chip: #e9ecf0;           /* pill: buttons, step numbers */
+  --ngui-chip-hover: #dde1e7;
+  --ngui-track: #dde1e7;          /* an unfilled slider track */
+  --ngui-tile: var(--ngui-card);  /* tiles on the panel */
+  --ngui-detail: var(--ngui-card);/* the consequence / feedback box */
+  --ngui-sunk: #ffffff;           /* the canvas ground (SimKit's --surface) */
+  --ngui-code: #f4f6f9;
+  --ngui-thumb: #ffffff;
+  --ngui-ok: #12804a; --ngui-ok-soft: #e3f6ec; --ngui-ok-text: #12804a;
+  --ngui-bad: #c4322b; --ngui-bad-soft: #fdecea; --ngui-bad-text: #c4322b;
+  --ngui-page: #f3f5f8;           /* behind the card, standalone only */
+  --ngui-shadow: 0 12px 32px rgba(15, 23, 42, .08);
+  --ngui-glow-1: rgba(1, 148, 240, .14); --ngui-glow-2: rgba(81, 93, 173, .12);
+
+  --ngui-font: var(--sberai-font-sans, "SB Sans Text", "Inter", -apple-system, BlinkMacSystemFont, system-ui,
+                                       "Segoe UI", Roboto, sans-serif);
+  --ngui-font-display: "SB Sans Display", var(--ngui-font);
+  /* code too is set in SB Sans Text (tabular figures), not a monospace face */
+  --ngui-font-mono: var(--ngui-font);
+  --sk-font: "SB Sans Text", "Inter", system-ui, sans-serif;
+  --ngui-ease: cubic-bezier(.23, 1, .32, 1);
+
+  /* SimKit reads these (SK.theme): the canvas ground and its ink */
+  --surface: var(--ngui-sunk); --text: var(--ngui-text);
+  /* SimKit's series colours, per gamma and mode: the first is the accent,
+     the rest other hues of the site's gradient so two curves never share
+     one; every light one is >= 4.6:1 on the canvas ground */
+  --sk-series: #0b6fbf #b4530f #08795e #5b5fc7 #8a6400 #c4322b; --ngui-s1: #0b6fbf; --ngui-s2: #b4530f; --ngui-s3: #08795e; --ngui-s4: #5b5fc7; --ngui-s5: #8a6400; --ngui-s6: #c4322b;
+  --sk-accent: #0b6fbf; --sk-good: #12804a; --sk-bad: #c4322b;
+}
+:root[data-gamma=emerald] {
+  --sbs-accent: #08795e; --sbs-accent-strong: #08795e; --sbs-accent-soft: #e3f6ef; --sbs-brand: #0b7357;
+  --ngui-accent-mid: #bde9d8; --ngui-accent-solid: #08795e;
+  --ngui-glow-1: rgba(21, 204, 154, .14); --ngui-glow-2: rgba(11, 115, 87, .10);
+  --sk-series: #08795e #b4530f #0b6fbf #5b5fc7 #8a6400 #c4322b; --ngui-s1: #08795e; --ngui-s2: #b4530f; --ngui-s3: #0b6fbf; --ngui-s4: #5b5fc7; --ngui-s5: #8a6400; --ngui-s6: #c4322b; --sk-accent: #08795e;
+}
+:root[data-gamma=warm] {
+  --sbs-accent: #b84d0a; --sbs-accent-strong: #b84d0a; --sbs-accent-soft: #fff1e6; --sbs-brand: #b23a0e;
+  --ngui-accent-mid: #ffd8bc; --ngui-accent-solid: #b84d0a;
+  --ngui-glow-1: rgba(245, 116, 24, .16); --ngui-glow-2: rgba(178, 58, 14, .10);
+  --sk-series: #b84d0a #0b6fbf #08795e #5b5fc7 #8a6400 #c4322b; --ngui-s1: #b84d0a; --ngui-s2: #0b6fbf; --ngui-s3: #08795e; --ngui-s4: #5b5fc7; --ngui-s5: #8a6400; --ngui-s6: #c4322b; --sk-accent: #b84d0a;
+}
+
+/* dark mode: the screensaver's .themable tokens, one for one */
+:root.dark {
+  --sbs-accent: #4db1ff; --sbs-accent-strong: #4db1ff; --sbs-accent-soft: #0f2538; --sbs-brand: #515dad;
+  --ngui-accent-mid: #174062;
+  /* the bright accent stays for rings, text and the slider; filled controls
+     use a deeper step of it so their white label reaches 4.7:1 (white on
+     #4db1ff is only 2.3:1), and the fill keeps 3.5:1 against the panel */
+  --ngui-accent-solid: #0075d1; --ngui-on-accent: #ffffff; --ngui-ok-solid: #1c8351;
+  --ngui-on-series: #0b0c10;      /* dark series colours are bright: ink on them */
+  --ngui-text: #f2f4f7; --ngui-body: #d5d9df; --ngui-subtle: #98a1ac; --ngui-faint: #5c646f;
+  --ngui-card: #15171c; --ngui-panel: #1b1e24; --ngui-line: #2a2f37;
+  --ngui-chip: #23272e; --ngui-chip-hover: #2c323b; --ngui-track: #2c323b;
+  --ngui-tile: #15171c; --ngui-detail: #15171c; --ngui-sunk: #101216; --ngui-code: #0b0c10;
+  --ngui-thumb: #f2f4f7;
+  --ngui-ok: #3dd68c; --ngui-ok-soft: #10301f; --ngui-ok-text: #3dd68c;
+  --ngui-bad: #ff6b6b; --ngui-bad-soft: #35181a; --ngui-bad-text: #ff6b6b;
+  --ngui-page: #0b0c10;
+  --ngui-shadow: 0 24px 60px rgba(0, 0, 0, .28);
+  --ngui-glow-1: rgba(1, 148, 240, .30); --ngui-glow-2: rgba(81, 93, 173, .40);
+  --sk-series: #4db1ff #ff8a3d #2fd6a4 #9ea8ff #ffc27a #ff6b6b; --ngui-s1: #4db1ff; --ngui-s2: #ff8a3d; --ngui-s3: #2fd6a4; --ngui-s4: #9ea8ff; --ngui-s5: #ffc27a; --ngui-s6: #ff6b6b;
+  --sk-accent: #4db1ff; --sk-good: #3dd68c; --sk-bad: #ff6b6b;
+}
+:root.dark[data-gamma=emerald] {
+  --sbs-accent: #2fd6a4; --sbs-accent-strong: #2fd6a4; --sbs-accent-soft: #0c2820; --sbs-brand: #0b7357;
+  --ngui-accent-mid: #12473a; --ngui-accent-solid: #1a8464;
+  --ngui-glow-1: rgba(21, 204, 154, .26); --ngui-glow-2: rgba(11, 115, 87, .36);
+  --sk-series: #2fd6a4 #ff8a3d #4db1ff #9ea8ff #ffc27a #ff6b6b; --ngui-s1: #2fd6a4; --ngui-s2: #ff8a3d; --ngui-s3: #4db1ff; --ngui-s4: #9ea8ff; --ngui-s5: #ffc27a; --ngui-s6: #ff6b6b; --sk-accent: #2fd6a4;
+}
+:root.dark[data-gamma=warm] {
+  --sbs-accent: #ff8a3d; --sbs-accent-strong: #ff8a3d; --sbs-accent-soft: #2b190e; --sbs-brand: #b23a0e;
+  --ngui-accent-mid: #4d2a14; --ngui-accent-solid: #c74f00;
+  --ngui-glow-1: rgba(245, 116, 24, .32); --ngui-glow-2: rgba(178, 58, 14, .30);
+  --sk-series: #ff8a3d #4db1ff #2fd6a4 #9ea8ff #ffc27a #ff6b6b; --ngui-s1: #ff8a3d; --ngui-s2: #4db1ff; --ngui-s3: #2fd6a4; --ngui-s4: #9ea8ff; --ngui-s5: #ffc27a; --ngui-s6: #ff6b6b; --sk-accent: #ff8a3d;
+}
+
+/* ------------------------------------------------------------------- shell */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+/* touch screens (tablets, phones): no grey tap flash, no font inflation in landscape */
+html { -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+body.ngui { font: 16px/1.5 var(--ngui-font); color: var(--ngui-text); background: transparent;
+  -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+.ngui p, .ngui h1, .ngui h2, .ngui h3, .ngui h4, .ngui ul, .ngui ol, .ngui figure { margin: 0; }
+
+/* Embedded: fluid, transparent, no padding -- the host's card is the frame.
+   Standalone (a file opened directly, the render check, the tournament judge):
+   the same content inside a paper card on the site's ambient page, 800 px
+   wide with 20 px of padding (760 px of content, a 728 px canvas inside the
+   widget panel); it narrows with the window down to the narrowest host column. */
+html.ngui-standalone body.ngui { padding: 24px 0; min-height: 100vh;
+  background:
+    radial-gradient(ellipse 60% 50% at 100% 100%, var(--ngui-glow-1), transparent 65%),
+    radial-gradient(ellipse 50% 40% at 80% -5%, var(--ngui-glow-2), transparent 70%),
+    var(--ngui-page); background-attachment: fixed; }
+html.ngui-standalone .ngui-answer { width: min(800px, 100vw); margin: 0 auto; padding: 20px;
+  border-radius: 24px; background: var(--ngui-card); border: 1px solid var(--ngui-line);
+  box-shadow: var(--ngui-shadow); }
+@media (max-width: 420px) {
+  html.ngui-standalone body.ngui { padding: 0; }
+  html.ngui-standalone .ngui-answer { border-radius: 0; border-width: 0; }
+}
+
+.ngui-answer { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+/* the one-line answer: the site's headline */
+.ngui-title { font: 600 22px/1.2 var(--ngui-font-display); letter-spacing: -.01em; color: var(--ngui-text);
+  text-wrap: balance; }
+
+/* --------------------------------------------------------- text sections */
+/* the heading is the section's small muted label ("Пояснение для новичка") */
+.ngui .block { display: flex; flex-direction: column; gap: 6px; min-width: 0; margin: 0; padding: 0;
+  background: none; border: 0; border-radius: 0; box-shadow: none; }
+.ngui .block > h2, .ngui .block > h3 { font-size: 14px; line-height: 20px; font-weight: 400;
+  color: var(--ngui-subtle); }
+.ngui .block > p, .ngui .block > ul, .ngui .block > ol { color: var(--ngui-body); }
+.ngui .block .lead { font-size: 18px; line-height: 1.45; color: var(--ngui-text); }
+.ngui .block ul, .ngui .block ol { padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
+.ngui .block li::marker { color: var(--sbs-accent-strong); }
+.ngui a { color: var(--sbs-accent-strong); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+.ngui mark { background: none; color: var(--sbs-accent-strong); text-decoration: underline;
+  text-decoration-thickness: 2px; text-underline-offset: 4px; }
+.ngui code { font-family: var(--ngui-font-mono); font-variant-numeric: tabular-nums; background: var(--ngui-chip); padding: 1px 6px;
+  border-radius: 6px; font-size: .88em; color: var(--ngui-text); }
+.ngui pre { margin: 0; padding: 12px 14px; border-radius: 10px; background: var(--ngui-code);
+  border: 1px solid var(--ngui-line); font: 500 14px/1.45 var(--ngui-font-mono); font-variant-numeric: tabular-nums; color: var(--ngui-subtle);
+  overflow-x: auto; }
+.ngui pre code { background: none; padding: 0; color: inherit; }
+.ngui strong, .ngui b { font-weight: 600; color: var(--ngui-text); }
+.ngui .block.hero > h2 { font: 600 18px/22px var(--ngui-font-display); color: var(--ngui-text); }
+.ngui .block.overview a { color: inherit; }
+
+/* ---------------------------------------------------------- widget panels */
+/* every block that carries a widget: the site's .widget (panel, hairline,
+   rounded 14) with its uppercase accent label */
+.ngui .block.full,
+.ngui .block:has(> .slider-wrap, > .tg-grid, > .quiz, > .qgroup, > .stepper, > .replay, > .mermaid, > .chart),
+.ngui .block.predict, .ngui .block.tryit, .ngui .block.dyk {
+  background: var(--ngui-panel); border: 1px solid var(--ngui-line); border-radius: 16px;
+  padding: 15px; gap: 12px; }
+.ngui .block.full > h2,
+.ngui .block:has(> .slider-wrap, > .tg-grid, > .quiz, > .qgroup, > .stepper, > .replay, > .mermaid, > .chart) > h2,
+.ngui .block.predict > h2, .ngui .block.tryit > h2, .ngui .block.dyk > h2 {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--sbs-accent-strong); }
+.ngui .block.full > p:not([class]),
+.ngui .block:has(> .slider-wrap, > .tg-grid, > .quiz, > .qgroup, > .stepper, > .replay) > p:not([class]) {
+  font-size: 14px; line-height: 20px; color: var(--ngui-subtle); }
+
+/* the spark the site puts in front of a tip */
+.ngui .block.dyk > h2::before, .ngui .block.tryit > h2::before {
+  content: ""; flex: 0 0 16px; height: 16px; background: currentColor;
+  -webkit-mask: var(--ngui-i-spark) center / contain no-repeat; mask: var(--ngui-i-spark) center / contain no-repeat; }
+.ngui .block.dyk .dyk-mark { display: none; }
+.ngui .block.dyk > p, .ngui .block.tryit > ol, .ngui .block.tryit > ul { font-size: 16px; color: var(--ngui-body); }
+:root { --ngui-i-spark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='m12 3 2.3 6.7L21 12l-6.7 2.3L12 21l-2.3-6.7L3 12l6.7-2.3L12 3Z' fill='none' stroke='black' stroke-width='1.8' stroke-linejoin='round'/%3E%3C/svg%3E");
+        --ngui-i-check: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='m5 12.5 4.5 4.5L19 7.5' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
+
+/* "Важно запомнить": the site's tag, grown into a card */
+.ngui .block.takeaways { background: var(--sbs-accent-soft); border: 1px solid var(--ngui-accent-mid);
+  border-radius: 16px; padding: 14px 16px; gap: 8px; }
+.ngui .block.takeaways > h2 { font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--sbs-accent-strong); }
+.ngui .block.takeaways ul, .ngui .block.takeaways ol { list-style: none; padding: 0; gap: 8px; color: var(--ngui-text); }
+.ngui .block.takeaways li { position: relative; padding-left: 28px; }
+.ngui .block.takeaways li::before { content: ""; position: absolute; left: 0; top: 1px; width: 20px; height: 20px;
+  border-radius: 50%; background: var(--ngui-accent-solid); }
+.ngui .block.takeaways li::after { content: ""; position: absolute; left: 4px; top: 5px; width: 12px; height: 12px;
+  background: var(--ngui-on-accent);
+  -webkit-mask: var(--ngui-i-check) center / contain no-repeat; mask: var(--ngui-i-check) center / contain no-repeat; }
+
+/* sources: small pills at the end */
+.ngui .block.sources { gap: 8px; margin-top: 4px; padding-top: 12px; border-top: 1px solid var(--ngui-line); }
+.ngui .block.sources > h2 { font-size: 14px; line-height: 20px; }
+.ngui .block.sources ul { list-style: none; padding: 0; flex-direction: row; flex-wrap: wrap; gap: 6px; }
+.ngui .block.sources a { display: inline-flex; align-items: center; min-height: 24px; padding: 3px 10px;
+  border-radius: 999px; background: var(--ngui-chip); font-size: 12px; line-height: 16px;
+  color: var(--ngui-subtle); text-decoration: none; transition: background-color .2s, color .2s; }
+@media (hover: hover) and (pointer: fine) { .ngui .block.sources a:hover { background: var(--ngui-chip-hover); color: var(--ngui-text); } }
+
+/* ---------------------------------------------------------------- controls */
+/* buttons: the site's pills; the active one and the primary action filled */
+.ngui button { font: inherit; font-size: 14px; line-height: 16px; min-height: 34px; margin: 0;
+  padding: 8px 14px; border: 0; border-radius: 999px; background: var(--ngui-chip);
+  color: var(--ngui-text); cursor: pointer;
+  transition: background-color .2s var(--ngui-ease), color .2s, box-shadow .2s, transform .15s var(--ngui-ease); }
+@media (hover: hover) and (pointer: fine) { .ngui button:hover { background: var(--ngui-chip-hover); } }
+.ngui button:not(:disabled):active { transform: scale(.96); }
+.ngui button { -webkit-tap-highlight-color: transparent; }
+.ngui button:focus-visible { outline: 2px solid var(--sbs-accent); outline-offset: 2px; }
+.ngui button.active, .ngui .sk-play { background: var(--ngui-accent-solid); color: var(--ngui-on-accent);
+  font-weight: 600; }
+@media (hover: hover) and (pointer: fine) { .ngui button.active:hover, .ngui .sk-play:hover { background: var(--ngui-accent-solid);
+  box-shadow: 0 0 0 3px var(--ngui-accent-mid); } }
+
+/* sliders: a pill track filled in the accent, a pill thumb ringed in it */
+/* the input is 24 px tall, so the whole thumb is a target (WCAG 2.5.8);
+   the 6 px pill track is drawn inside it */
+.ngui input[type=range] { --p: 50%; -webkit-appearance: none; appearance: none; display: block;
+  width: 100%; height: 24px; margin: 0; border: 0; border-radius: 999px; cursor: pointer; background: transparent; }
+.ngui input[type=range]::-webkit-slider-runnable-track { height: 6px; border-radius: 999px;
+  background: linear-gradient(to right, var(--sbs-accent) 0 var(--p), var(--ngui-track) var(--p) 100%); }
+.ngui input[type=range]::-moz-range-track { height: 6px; border-radius: 999px; background: var(--ngui-track); }
+.ngui input[type=range]::-moz-range-progress { height: 6px; border-radius: 999px; background: var(--sbs-accent); }
+.ngui input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 32px;
+  height: 20px; margin-top: -7px; border: 2px solid var(--sbs-accent); border-radius: 999px; background: var(--ngui-thumb);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .18); transition: transform .2s var(--ngui-ease); }
+.ngui input[type=range]:active::-webkit-slider-thumb { transform: scale(1.08); }
+.ngui input[type=range]::-moz-range-thumb { width: 28px; height: 16px; border: 2px solid var(--sbs-accent);
+  border-radius: 999px; background: var(--ngui-thumb); }
+.ngui input[type=range]:focus-visible { outline: 2px solid var(--sbs-accent); outline-offset: 4px; }
+.ngui select, .ngui input[type=number], .ngui input[type=text] { font: inherit; font-size: 14px;
+  padding: 7px 12px; border: 1px solid var(--ngui-line); border-radius: 12px;
+  background: var(--ngui-card); color: var(--ngui-text); }
+.ngui select:focus-visible, .ngui input[type=number]:focus-visible, .ngui input[type=text]:focus-visible {
+  outline: 2px solid var(--sbs-accent); outline-offset: 1px; }
+
+/* -------------------------------------------------- simulation + SimKit */
+.ngui .sim-holder { position: relative; display: flex; flex-direction: column; gap: 12px;
+  align-items: stretch; width: 100%; min-width: 0; }
+.ngui .sim-holder canvas { display: block; max-width: 100%; height: auto !important; border-radius: 12px;
+  box-shadow: 0 0 0 1px var(--ngui-line); }
+.ngui .sim-holder > button { align-self: flex-start; }
+.ngui .sim-holder > span, .ngui .sim-holder > label { font-size: 14px; color: var(--ngui-subtle); }
+.ngui .sk-caption, .ngui .sim-caption { font-size: 12px; line-height: 16px; color: var(--ngui-subtle);
+  opacity: 1; margin: 0; }
+.ngui .sk-ctl { display: flex; flex-direction: column; gap: 2px; min-width: 0; margin: 0; }
+.ngui .sk-ctl > span:not(.sk-val) { font-size: 14px; line-height: 20px; color: var(--ngui-subtle); opacity: 1; }
+.ngui .sk-ctl input[type=range] { width: 100%; max-width: none; }
+.ngui .sk-val { font: 600 16px/20px var(--ngui-font-display); color: var(--sbs-accent-strong);
+  font-variant-numeric: tabular-nums; }
+.ngui .sk-hint { font-size: 12px; line-height: 16px; color: var(--ngui-subtle); opacity: 1; max-width: none; }
+.ngui .sk-playbar, .ngui .sk-presets, .ngui .sk-choice { display: flex; flex-wrap: wrap; gap: 8px;
+  align-items: center; margin: 0; }
+.ngui .sk-speed { font-variant-numeric: tabular-nums; }
+.ngui .sk-choice-label { font-size: 14px; color: var(--ngui-subtle); margin-right: 4px; }
+.ngui .sk-choice .sk-hint { flex-basis: 100%; }
+/* read-outs: the site's comparison tiles (.tile / .tile.hi) */
+.ngui .sk-tiles { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; max-width: none; margin: 0; }
+.ngui .sk-tile { flex: 1 1 128px; min-width: 0; }
+.ngui .sk-tile { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 12px;
+  background: var(--ngui-tile); box-shadow: inset 0 0 0 1px var(--ngui-line);
+  transition: background-color .35s ease, box-shadow .35s ease; }
+.ngui .sk-tile .k { font-size: 12px; line-height: 16px; color: var(--ngui-subtle); opacity: 1;
+  text-transform: none; letter-spacing: 0; }
+.ngui .sk-tile .v { font: 600 24px/1.15 var(--ngui-font-display); overflow-wrap: anywhere; font-variant-numeric: tabular-nums;
+  color: var(--ngui-text); }
+.ngui .sk-tile.hl { background: var(--sbs-accent-soft); box-shadow: inset 0 0 0 1.5px var(--sbs-accent); }
+.ngui .sk-tile.hl .v { color: var(--ngui-text); }
+
+/* ---------------------------------------------------------- slider block */
+/* value (display figure in the accent), then its consequence */
+.ngui .slider-wrap { display: flex; flex-direction: column; gap: 8px; }
+.ngui .readout { font: 600 24px/1.15 var(--ngui-font-display); color: var(--sbs-accent-strong); margin: 0;
+  font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.ngui .slider-out { margin: 0; padding: 12px 16px; border: 0; border-radius: 12px; background: var(--ngui-detail);
+  box-shadow: inset 0 0 0 1px var(--ngui-line); font-size: 14px; line-height: 20px; color: var(--ngui-body); }
+.ngui .slider-wrap .bar { display: none; }   /* the filled track already shows it */
+
+/* ------------------------------------------------ side by side, steps */
+.ngui .tg-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
+.ngui .tg-card { padding: 12px 16px; border: 0; border-radius: 12px; background: var(--ngui-tile);
+  box-shadow: inset 0 0 0 1px var(--ngui-line); min-width: 0; }
+.ngui .tg-label { margin: 0 0 4px; font-size: 12px; line-height: 16px; font-weight: 600;
+  color: var(--ngui-subtle); text-transform: none; letter-spacing: 0; }
+.ngui .tg-pane { font-size: 16px; line-height: 24px; color: var(--ngui-text); }
+/* the site's "Что подстроилось" list: rows split by hairlines, an icon tile */
+.ngui .stepper, .ngui .block .stepper { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0; }
+.ngui .stepper li { display: flex; gap: 12px; align-items: center; padding: 10px 0; border: 0;
+  border-top: 1px solid var(--ngui-line); border-radius: 0; background: none; font-size: 16px; line-height: 24px;
+  color: var(--ngui-body); }
+.ngui .stepper li:first-child { border-top: 0; padding-top: 2px; }
+.ngui .stepper li:last-child { padding-bottom: 0; }
+.ngui .step-n { display: grid; place-items: center; flex: 0 0 32px; height: 32px; margin: 0; border-radius: 8px;
+  background: var(--sbs-accent-soft); color: var(--sbs-accent-strong);
+  font: 600 16px/1 var(--ngui-font-display); font-variant-numeric: tabular-nums; }
+.ngui .step-t { flex: 1; min-width: 0; }
+
+/* -------------------------------------------------------- quiz, predict */
+.ngui .qq { font-size: 16px; line-height: 24px; color: var(--ngui-text); }
+.ngui .qstmt { font-weight: 600; }
+.ngui .qpre { display: block; margin-bottom: 4px; font-size: 14px; line-height: 20px; color: var(--ngui-subtle); }
+.ngui .quiz { display: flex; flex-direction: column; gap: 8px; }
+.ngui .qopt { position: relative; min-height: 48px; padding: 12px 16px; border: 0; border-radius: 12px;
+  background: var(--ngui-tile); box-shadow: inset 0 0 0 1px var(--ngui-line); color: var(--ngui-text);
+  text-align: left; font-weight: 400; font-size: 16px; line-height: 24px; }
+@media (hover: hover) and (pointer: fine) { .ngui .qopt:hover { background: var(--ngui-tile); box-shadow: inset 0 0 0 1px var(--ngui-faint); } }
+.ngui .qopt.active, .ngui .qopt.chosen { background: var(--sbs-accent-soft);
+  box-shadow: inset 0 0 0 1.5px var(--sbs-accent); color: var(--ngui-text); font-weight: 400; }
+.ngui .quiz .qopt.correct { background: var(--ngui-ok-soft); box-shadow: inset 0 0 0 1.5px var(--ngui-ok);
+  padding-right: 40px; }
+.ngui .quiz .qopt.correct::after { content: ""; position: absolute; right: 12px; top: 50%; width: 20px; height: 20px;
+  margin-top: -10px; border-radius: 50%; background: var(--ngui-ok-solid); }
+.ngui .quiz .qopt.correct::before { content: ""; position: absolute; right: 16px; top: 50%; width: 12px; height: 12px;
+  margin-top: -6px; z-index: 1; background: var(--ngui-on-accent);
+  -webkit-mask: var(--ngui-i-check) center / contain no-repeat; mask: var(--ngui-i-check) center / contain no-repeat; }
+/* a wrong pick in a graded quiz */
+.ngui .block:has(> .qfb.no) .qopt.chosen:not(.correct) { background: var(--ngui-bad-soft);
+  box-shadow: inset 0 0 0 1.5px var(--ngui-bad); }
+.ngui .predict .qopt.correct { background: var(--ngui-tile); box-shadow: inset 0 0 0 1px var(--ngui-line);
+  outline: 1.5px dashed var(--sbs-accent); outline-offset: 2px; padding-right: 14px; }
+.ngui .predict .qopt.correct::before, .ngui .predict .qopt.correct::after { content: none; }
+/* feedback: the site's tip row -- hairline above, muted text, ink bold */
+.ngui .qfb, .ngui .pfb { margin: 0; padding: 12px 16px; border-radius: 12px; background: var(--ngui-detail);
+  box-shadow: inset 0 0 0 1px var(--ngui-line); font-size: 14px; line-height: 20px; font-weight: 400;
+  color: var(--ngui-subtle); opacity: 1; animation: ngui-in .5s var(--ngui-ease); }
+.ngui .qfb:empty, .ngui .pfb:empty { display: none; }
+.ngui .qfb.ok { background: var(--ngui-ok-soft); box-shadow: none; }
+.ngui .qfb.no { background: var(--ngui-bad-soft); box-shadow: none; }
+.ngui .qfb.ok strong { color: var(--ngui-ok-text); } .ngui .qfb.no strong { color: var(--ngui-bad-text); }
+.ngui .qexp, .ngui .pfb .prev { color: var(--ngui-text); font-weight: 400; }
+.ngui .pfb .prev { display: block; margin-top: 4px; }
+.ngui .qgroup + .qgroup { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--ngui-line); }
+@keyframes ngui-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* ------------------------------------------------------------ data widgets */
+.ngui .chart { width: 100%; height: 260px; }
+.ngui .mermaid { display: flex; justify-content: flex-start; padding: 8px 0; color: var(--ngui-text);
+  /* a diagram keeps a readable size; in a narrow column it scrolls sideways, and
+     the edge shadows (they move with the scroll) show there is more of it */
+  overflow-x: auto; overscroll-behavior-x: contain;
+  background:
+    linear-gradient(to right, var(--ngui-panel) 30%, transparent) left / 32px 100% no-repeat local,
+    linear-gradient(to left, var(--ngui-panel) 30%, transparent) right / 32px 100% no-repeat local,
+    radial-gradient(farthest-side at 0 50%, rgba(0,0,0,.28), transparent) left / 12px 100% no-repeat scroll,
+    radial-gradient(farthest-side at 100% 50%, rgba(0,0,0,.28), transparent) right / 12px 100% no-repeat scroll; }
+/* mermaid draws once with fixed colours: repaint its shapes from the tokens
+   so a diagram follows the palette and the mode like everything else */
+.ngui .mermaid:focus-visible { outline: 2px solid var(--sbs-accent); outline-offset: 2px; border-radius: 8px; }
+.ngui .mermaid svg { flex: none; min-width: 480px; height: auto; margin-inline: auto; }
+.ngui .mermaid .node rect, .ngui .mermaid .node circle, .ngui .mermaid .node ellipse,
+.ngui .mermaid .node polygon, .ngui .mermaid .node path, .ngui .mermaid .node .label-container {
+  fill: var(--sbs-accent-soft) !important; stroke: var(--sbs-accent) !important; stroke-width: 1.5px !important; }
+.ngui .mermaid .node rect, .ngui .mermaid .node .label-container { rx: 10px; ry: 10px; }
+.ngui .mermaid .nodeLabel, .ngui .mermaid .label, .ngui .mermaid .label text, .ngui .mermaid text,
+.ngui .mermaid span { color: var(--ngui-text) !important; fill: var(--ngui-text) !important;
+  font-family: var(--ngui-font) !important; }
+.ngui .mermaid .edgePath .path, .ngui .mermaid .flowchart-link, .ngui .mermaid path.relation {
+  stroke: var(--ngui-subtle) !important; stroke-width: 1.5px !important; }
+.ngui .mermaid marker path, .ngui .mermaid .arrowheadPath, .ngui .mermaid .arrowMarkerPath {
+  fill: var(--ngui-subtle) !important; stroke: var(--ngui-subtle) !important; }
+.ngui .mermaid .edgeLabel, .ngui .mermaid .edgeLabel rect, .ngui .mermaid .edgeLabel p {
+  background: var(--ngui-panel) !important; fill: var(--ngui-panel) !important; color: var(--ngui-subtle) !important; }
+.ngui .mermaid .cluster rect { fill: var(--ngui-card) !important; stroke: var(--ngui-line) !important; }
+/* sequence diagrams */
+.ngui .mermaid rect.actor { fill: var(--sbs-accent-soft) !important; stroke: var(--sbs-accent) !important; rx: 10px; ry: 10px; }
+.ngui .mermaid text.actor, .ngui .mermaid text.actor > tspan { fill: var(--ngui-text) !important; font-weight: 600; }
+.ngui .mermaid .actor-line, .ngui .mermaid line[class*=actor-line] { stroke: var(--ngui-line) !important; }
+.ngui .mermaid .messageLine0, .ngui .mermaid .messageLine1 { stroke: var(--ngui-subtle) !important; stroke-width: 1.5px !important; }
+.ngui .mermaid .messageText { fill: var(--ngui-text) !important; stroke: none !important; }
+.ngui .mermaid #arrowhead path, .ngui .mermaid marker#arrowhead path, .ngui .mermaid #crosshead path { fill: var(--ngui-subtle) !important; stroke: var(--ngui-subtle) !important; }
+.ngui .mermaid .note { fill: var(--ngui-card) !important; stroke: var(--ngui-line) !important; }
+.ngui .mermaid .noteText, .ngui .mermaid .noteText > tspan { fill: var(--ngui-text) !important; }
+.ngui .mermaid .activation0, .ngui .mermaid .activation1 { fill: var(--ngui-chip) !important; stroke: var(--ngui-line) !important; }
+/* pie charts: the series colours of the palette (ngui_embed.js maps each slice
+   and its legend swatch to --ngui-s1..6), slices split by the panel colour */
+.ngui .mermaid .pieOuterCircle { stroke: none !important; }
+.ngui .mermaid .pieCircle { stroke: var(--ngui-panel) !important; stroke-width: 2px !important; opacity: 1 !important; }
+.ngui .mermaid .slice { fill: var(--ngui-on-series) !important; font-size: 13px !important; font-weight: 600; }
+.ngui .mermaid .pieTitleText { fill: var(--ngui-text) !important; }
+.ngui .mermaid .legend text { fill: var(--ngui-text) !important; font-size: 13px !important; }
+.ngui .replay-ctl { display: flex; gap: 12px; align-items: center; }
+.ngui .replay-ctl > span { min-width: 3ch; font: 600 16px/20px var(--ngui-font-display); color: var(--sbs-accent-strong); font-variant-numeric: tabular-nums; text-align: right; }
+.ngui .replay-ctl input[type=range] { flex: 1; }
+.ngui .replay-out table { border-collapse: collapse; font-size: 14px; line-height: 18px; width: 100%; }
+.ngui .replay-out th { text-align: left; padding: 6px 12px 6px 0; font-weight: 400; color: var(--ngui-subtle);
+  border-bottom: 1px solid var(--ngui-line); }
+.ngui .replay-out td { padding: 6px 0; border-bottom: 1px solid var(--ngui-line); text-align: right;
+  font: 600 14px/18px var(--ngui-font-display); color: var(--ngui-text); font-variant-numeric: tabular-nums; }
+.ngui .replay-out tr:last-child td { border-bottom: 0; }
+
+/* ------------------------------------------------------------ touch */
+/* controls: click fires at once (no double-tap-zoom wait), a long press does
+   not select a button's label; content text stays selectable */
+.ngui button, .ngui input[type=range], .ngui select { touch-action: manipulation; }
+.ngui button { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+/* a finger, not a mouse (tablets, phones; an iPad with a trackpad keeps the
+   fine-pointer sizes): bigger targets, 16 px in fields so iOS does not zoom */
+@media (pointer: coarse) {
+  .ngui button { min-height: 44px; padding: 10px 16px; font-size: 15px; }
+  .ngui .qopt { min-height: 52px; }
+  .ngui input[type=range] { height: 36px; }
+  .ngui input[type=range]::-webkit-slider-thumb { width: 36px; height: 24px; margin-top: -9px; }
+  .ngui input[type=range]::-moz-range-thumb { width: 32px; height: 20px; }
+  .ngui select, .ngui input[type=number], .ngui input[type=text] { font-size: 16px; min-height: 44px; }
+  .ngui .block.sources a { min-height: 32px; padding: 6px 12px; font-size: 13px; }
+  .ngui .sk-playbar, .ngui .sk-presets, .ngui .sk-choice { gap: 8px; }
+}
+
+/* ------------------------------------------------------------- motion */
+@media (prefers-reduced-motion: reduce) {
+  .ngui *, .ngui *::before, .ngui *::after { animation: none !important; transition-duration: .01s !important; }
+}
+
+/* Shipped-with-defects pages keep their flags in the manifest, not on screen */
+html[data-ngui] section[data-qa-broken] > h2::after,
+html[data-ngui] section[data-qa-broken] > h3::after { content: none !important; }
+</style>
+<style>:root{--sk-canvas-min:480px}</style>
+<script src="https://cdn.jsdelivr.net/npm/p5@1.9.4/lib/p5.min.js" integrity="sha384-6Twx1hAeKnwfOYJAHtYeJETRiGD5pRPkjjh0pVbG1QoesncjOpw5e75Y1kOkXeRI" crossorigin="anonymous"></script>
+<script>
+/* Numbers in the page's language: the one place that knows whether this page
+   writes 1,5 or 1.5. Used by SK.fmt, by the SK.slider readout and by the p5
+   wrappers at the end of this file.
+
+   WHY: in the human review of 92 Russian pages (23 queries x 3 models plus a
+   hand-made arm), 15-22 of the 23 pages per model showed decimal POINTS in
+   widget readouts -- the most frequent widget-language complaint -- because
+   every sketch formats with toFixed(), which is English. The page already
+   declares its language (the lang attribute of the root element, set from the
+   UX spec), so the kit reads it instead of asking the model to remember: a
+   comma for ru and the languages listed below, a dot for every other language
+   and when there is no document (Node). `window.SK_LANG` overrides the page
+   language. */
+var SK_LOC = (function () {
+  var COMMA = {};
+  ('ru uk be kk uz ky tg az hy ka de fr es it pt pl cs sk sl hr sr bs mk bg ro tr nl sv da nb nn no ' +
+   'fi et lv lt el hu id vi').split(' ').forEach(function (c) { COMMA[c] = 1; });
+  var seen = null, seenComma = false;
+  function rawLang() {
+    var l = '';
+    try { if (typeof window !== 'undefined' && window.SK_LANG) l = String(window.SK_LANG); } catch (e) {}
+    if (!l) {
+      try { if (typeof document !== 'undefined' && document.documentElement) l = String(document.documentElement.lang || ''); } catch (e) {}
+    }
+    return l;
+  }
+  /* true when this page writes a decimal comma ("ru-RU" counts as "ru") */
+  function comma() {
+    var l = rawLang();
+    if (l !== seen) { seen = l; seenComma = COMMA[l.trim().toLowerCase().split(/[-_]/)[0]] === 1; }
+    return seenComma;
+  }
+  /* `digit.digit` -> `digit,digit`. The look-ahead keeps a chain such as
+     1.2.3 consistent (1,2,3) instead of leaving half of it converted. */
+  var DOT_DIGIT = /(\d+)\.(?=\d)/g;
+  /* a version glued to a Latin name (Qwen 2.5, GPT-4.5, Python 3.11) is not a
+     decimal: "Qwen 2,5" was drawn on run_20261015_204128_169 (the same skip
+     as ru_style.decimal_points) */
+  /* glued (GPT-4.5, v1.2) or after a capitalised name (Qwen 2.5); a lower-case
+     word before a number ("step 0.25") is still a quantity */
+  var NAME_BEFORE = /(?:[A-Za-z][-\u2011]?|[A-Z][A-Za-z]+\s)[\d.]*$/;
+  function text(s) {
+    s = String(s);
+    return s.replace(DOT_DIGIT, function (m, d, off) {
+      return NAME_BEFORE.test(s.slice(Math.max(0, off - 16), off)) ? m : d + ',';
+    });
+  }
+  /* the same for a string that is HTML: markup is left alone, so
+     style="opacity:0.5" stays valid CSS. A tag starts with `<` and a letter
+     (or `/`, `!`), so "a < 1.5" is still text. */
+  var TAG = /(<\/?[A-Za-z!][^>]*>)/;
+  function html(s) {
+    s = String(s);
+    if (s.indexOf('<') < 0) return text(s);
+    var parts = s.split(TAG);                       /* odd entries are the tags */
+    for (var i = 0; i < parts.length; i += 2) parts[i] = text(parts[i]);
+    return parts.join('');
+  }
+  return {comma: comma, text: text, html: html};
+})();
+
+/* SimKit -- composable helpers for explainer simulations. Global: SK */
+var SK = (function () {
+  /* Colours follow the PAGE: SK.theme() reads --surface/--text from the
+     document once and derives ink/dim/line/bg and a series palette that
+     reads on that ground. Before that (or in the bare gate harness) the
+     dark defaults below apply. Every helper reads these variables, never
+     literals, so a sketch never paints a dark box into a light card. */
+  var INK = [232, 238, 246], DIM = [142, 160, 181], LINE = [70, 82, 100];
+  var BG = [15, 20, 30], GRID = [28, 36, 50], DARK = true;
+  var SERIES_DARK = [[120, 190, 255], [255, 180, 80], [120, 230, 140],
+                     [230, 140, 230], [240, 220, 120], [140, 220, 230]];
+  /* light series darkened 2026-10-15 to >= 4.8:1 on #f7f7f8 (they were
+     3.4-4.2:1 for four of six): a series colour also labels its curve, and
+     the render check's 4.5:1 flagged those labels on every light page */
+  var SERIES_LIGHT = [[25, 117, 153], [148, 98, 25], [31, 125, 71],
+                      [150, 70, 160], [132, 106, 18], [17, 120, 129]];
+  var SERIES = SERIES_DARK, THEMED = false;
+  /* role colours a page may name (--sk-accent / --sk-good / --sk-bad, the
+     embeddable answer does per palette); null = the fixed pairs in color() */
+  var ROLE = {accent: null, good: null, bad: null};
+  function parseCol(s) {
+    s = String(s || '').trim();
+    var m = s.match(/^#([0-9a-f]{3,8})$/i);
+    if (m) { var h = m[1]; if (h.length < 6) h = h.split('').map(function (c) { return c + c; }).join('');
+      return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)]; }
+    m = s.match(/rgba?\(\s*(\d+)[ ,]+(\d+)[ ,]+(\d+)/i);
+    if (m) return [+m[1], +m[2], +m[3]];
+    return null;
+  }
+  function mix(a, b, t) { return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]; }
+  function lum(c) { return (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) / 255; }
+  function theme(force) {
+    if (THEMED && !force) return;
+    var cs = null;
+    /* no body yet (a call while the kit loads): try again on the next call
+       instead of keeping the dark defaults for good */
+    try { if (!document.body) return; cs = getComputedStyle(document.body); } catch (e) { return; }
+    THEMED = true;
+    var surf = parseCol(cs.getPropertyValue('--surface')) || parseCol(cs.backgroundColor);
+    var text = parseCol(cs.getPropertyValue('--text')) || parseCol(cs.color);
+    if (!surf || !text) return;
+    if (lum(surf) < 0.5 && lum(text) < 0.5) return;      /* unthemed harness */
+    DARK = lum(surf) < 0.5;
+    /* DIM at 0.33, not 0.45: secondary labels must still pass WCAG AA (4.5:1). At
+       0.45 they were #81818c on #f7f7f8 = 3.58:1 on the light theme, and the render
+       check's contrast probe flagged every page's axis labels (raters: low-contrast
+       labels, expl_human_eval*.csv). 0.33 gives ~5.0 on #f2f2f2, 5.2 on white, 6.6 dark. */
+    INK = text; DIM = mix(text, surf, 0.33); LINE = mix(text, surf, 0.78);
+    BG = mix(surf, text, DARK ? 0.06 : 0.035); GRID = mix(surf, text, DARK ? 0.14 : 0.09);
+    SERIES = DARK ? SERIES_DARK : SERIES_LIGHT;
+    /* A page may name its series colours (--sk-series: '#007bca #b45309 ...'):
+       the embeddable micro answer does, per host palette, so a curve takes the
+       host's accent (src/render/ngui_embed.css). Pages without it: as before. */
+    var ser = String(cs.getPropertyValue('--sk-series') || '').match(/#[0-9a-f]{3,8}\b/gi);
+    if (ser && ser.length >= 2) {
+      var cols = [];
+      for (var i = 0; i < ser.length; i++) { var c = parseCol(ser[i]); if (c) cols.push(c); }
+      if (cols.length >= 2) SERIES = cols;
+    }
+    for (var r in ROLE) ROLE[r] = parseCol(cs.getPropertyValue('--sk-' + r));
+  }
+  /* canvas sized to the holder: SK.canvas(p, height) -> {w, h}. Width is the
+     container width (min 320, max 960); the page CSS keeps it responsive.
+     A page may set its own floor (--sk-canvas-min): the embeddable micro
+     answer (src/render/ngui.py) sits in a host column whose widget area runs
+     from 200 to ~600 px and sets 200 (sketches told about the column) or
+     480 (sketches laid out for the old wide page, scaled down by CSS instead
+     of clipping their labels). Pages that set nothing: 320, as always. */
+  function canvas(p, h) {
+    var node = p._userNode || (p.canvas && p.canvas.parentNode) || null;
+    var w = node && node.clientWidth ? node.clientWidth : 720;
+    var lo = 320;
+    try { lo = parseFloat(getComputedStyle(document.body).getPropertyValue('--sk-canvas-min')) || 320; } catch (e) {}
+    w = Math.max(lo, Math.min(960, Math.floor(w)));
+    /* h <= 2 is a share of the width: SK.canvas(p, 0.5) = half as tall as
+       wide. The --kit-docs reference author is told no pixel size at all
+       (it spent ~14 width mentions per draft on pixel arithmetic for 480 and
+       728 px, docs/decisions/kit_reference_2026-10-20.md); no sketch asks
+       for a canvas 2 px tall. */
+    h = h > 0 && h <= 2 ? Math.round(w * h) : (h || Math.round(w * 0.45));
+    p.createCanvas(w, h);
+    /* canvas text in the page's own face (--sk-font, e.g. SB Sans Text on
+       the embeddable answer); absent -> p5's default */
+    try {
+      var ff = getComputedStyle(document.documentElement).getPropertyValue('--sk-font').trim();
+      if (ff && p.textFont) p.textFont(ff);
+    } catch (e) {}
+    theme();
+    return {w: w, h: h};
+  }
+  /* split the canvas into n side-by-side (or stacked, dir='v') boxes with a
+     gutter; each box is a plotting box {x,y,w,h} for SK.axes/plot/hist. */
+  function panels(p, n, opts) {
+    opts = opts || {}; var pad = opts.pad === undefined ? 14 : opts.pad;
+    var gap = opts.gap === undefined ? 18 : opts.gap; var dir = opts.dir || 'h';
+    var top = opts.top === undefined ? pad : opts.top;
+    var W = p.width - 2 * pad, H = p.height - top - pad, out = [];
+    for (var i = 0; i < n; i++) {
+      if (dir === 'v') { var bh = (H - gap * (n - 1)) / n; out.push({x: pad, y: top + i * (bh + gap), w: W, h: bh}); }
+      else { var bw = (W - gap * (n - 1)) / n; out.push({x: pad + i * (bw + gap), y: top, w: bw, h: H}); }
+    }
+    return out;
+  }
+  /* one-line caption ABOVE the canvas (HTML, not canvas text) */
+  function caption(p, s) {
+    if (p.__skCaption) { if (p.__skCaption.txt !== s) { p.__skCaption.el.html(s); p.__skCaption.txt = s; } return p.__skCaption.el; }
+    var el = p.createDiv(s); el.addClass('sk-caption');
+    try { var node = p._userNode; if (node && p.canvas) node.insertBefore(el.elt, p.canvas); } catch (e) {}
+    p.__skCaption = {el: el, txt: s}; return el;
+  }
+  /* strobe trail: T = SK.trail(n); each frame T.push(x, y); T.draw(p, colour,
+     r) paints fading ghosts so a growing gap between them SHOWS acceleration */
+  function trail(n) {
+    var pts = [];
+    return {
+      push: function (x, y) { pts.push([x, y]); if (pts.length > (n || 40)) pts.shift(); },
+      clear: function () { pts.length = 0; },
+      draw: function (p, c, r) {
+        c = c === undefined || c === null ? SERIES[0] : color(c); r = r || 6; p.noStroke();
+        for (var i = 0; i < pts.length; i++) {
+          p.fill(c[0], c[1], c[2], 40 + 160 * (i / Math.max(1, pts.length - 1)));
+          p.circle(pts[i][0], pts[i][1], r * 2);
+        }
+      },
+      points: pts
+    };
+  }
+  /* play / pause / reset / speed row bound to one clock object:
+       var C = SK.playbar(p, {speeds: [0.5, 1, 2], onReset: fn});
+       p.draw: var dt = C.tick();  // seconds of sim time this frame (0 when paused)
+     C.playing, C.speed, C.t (elapsed sim time) are readable. */
+  function playbar(p, opts) {
+    opts = opts || {};
+    var row = p.createDiv(''); row.addClass('sk-playbar');
+    /* a reader who asked for reduced motion starts paused (the play button is right there) */
+    var still = false;
+    try { still = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches); } catch (e) {}
+    var C = {playing: opts.autoplay !== false && !still, speed: opts.speed || 1, t: 0, last: null};
+    /* glyphs, not English words, unless the page passes its own labels
+       ({play, pause, reset}) -- every spec widget with `step` showed
+       Play/Pause/Reset on a Russian page (2709_audit.md js-runtime-13) */
+    var L = (typeof window !== 'undefined' && window.SK_STRINGS) || {};
+    var tPlay = opts.play || L.play || '\u25B6', tPause = opts.pause || L.pause || '\u275A\u275A', tReset = opts.reset || L.reset || '\u21BA';
+    var play = p.createButton(C.playing ? tPause : tPlay); play.parent(row); play.addClass('sk-play');
+    /* aria-labels only from the page's own strings (window.SK_STRINGS / opts):
+       a hard-coded 'play / pause' was English on every Russian page; without
+       words the visible glyph names the button */
+    if (opts.play || L.play) play.attribute('aria-label', String(opts.play || L.play));
+    function onPlay() { C.playing = !C.playing; C.last = null; play.html(C.playing ? tPause : tPlay); }
+    play.mousePressed(onPlay); keyActivate(play, onPlay);
+    var reset = p.createButton(tReset); reset.parent(row); reset.addClass('sk-reset');
+    if (opts.reset || L.reset) reset.attribute('aria-label', String(opts.reset || L.reset));
+    function onResetClick() { C.t = 0; C.last = null; if (opts.onReset) opts.onReset(); }
+    reset.mousePressed(onResetClick); keyActivate(reset, onResetClick);
+    var speeds = opts.speeds || [0.5, 1, 2], sp = [];
+    for (var i = 0; i < speeds.length; i++) (function (k) {
+      var b = p.createButton(speeds[k] + 'x'); b.parent(row); b.addClass('sk-speed'); if (speeds[k] === C.speed) b.addClass('active');
+      b.attribute('aria-pressed', speeds[k] === C.speed ? 'true' : 'false');
+      var onSpeed = function () { C.speed = speeds[k]; for (var j = 0; j < sp.length; j++) { if (j === k) sp[j].addClass('active'); else sp[j].removeClass('active'); sp[j].attribute('aria-pressed', j === k ? 'true' : 'false'); } };
+      b.mousePressed(onSpeed); keyActivate(b, onSpeed);
+      sp.push(b);
+    })(i);
+    C.tick = function () {
+      var now = p.millis() / 1000;
+      if (C.last === null) { C.last = now; return 0; }
+      var dt = Math.min(0.05, now - C.last) * (C.playing ? C.speed : 0); C.last = now; C.t += dt; return dt;
+    };
+    C.row = row; C.draw = function () {}; return C;
+  }
+
+  /* Enter / Space on a focused kit button run its action. p5's mousePressed
+     listens to mousedown, which a keyboard never fires, so a reader tabbing
+     through the controls could focus a button and not press it. A keyboard
+     activation fires no mousedown, so nothing runs twice. */
+  function keyActivate(el, fn) {
+    try {
+      el.elt.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); fn(e); }
+      });
+    } catch (e) {}
+  }
+  function clamp(v, a, b) { return v < a ? a : (v > b ? b : v); }
+  function lerp(a, b, t) { return a + (b - a) * t; }
+  function map(v, a, b, c, d) { return c + (d - c) * ((v - a) / (b - a || 1)); }
+  /* ---- numbers as the reader writes them ---------------------------------
+     SK.fmt(v, digits = 2, unit) -> text. The page's decimal separator (comma
+     on a ru page, see SK_LOC), a true minus sign U+2212 (a negative never
+     wraps at a hyphen and never reads as a dash), a no-break space U+00A0
+     before the unit, no digit grouping, and a dash for anything that is not a
+     number -- never "NaN" or "Infinity" on a reader's screen. A string passes
+     through untouched (the unit is still appended). A negative that rounds to
+     zero is written "0", not "-0". src/js/sim_spec.js has its own fmt with the
+     SAME rules (the SimSpec runtime shares no code with the kit). */
+  var MINUS = '\u2212', NBSP = '\u00A0', DASH = '\u2014';
+  /* x is a finite number: n digits, the page's separator, a real minus */
+  function numText(x, n) {
+    var s = Math.abs(x).toFixed(n);
+    if (SK_LOC.comma()) s = s.replace('.', ',');
+    return x < 0 && /[1-9]/.test(s) ? MINUS + s : s;
+  }
+  /* "5,50" -> "5,5", "5,00" -> "5": only the fraction loses its zeros */
+  function trimZeros(s) { return s.replace(/([.,]\d*?)0+$/, '$1').replace(/[.,]$/, ''); }
+  /* two significant digits: what a readout falls back to when its fixed digits
+     would write a value that is not zero as "0,000000" (5e-7 -> "5,0e-7") */
+  function sigText(x) {
+    var s = Math.abs(x).toPrecision(2);
+    if (SK_LOC.comma()) s = s.replace('.', ',');
+    return x < 0 ? MINUS + s : s;
+  }
+  function unitText(unit) { return (unit === undefined || unit === null || unit === '') ? '' : NBSP + unit; }
+  function fmt(v, n, unit) {
+    var u = unitText(unit);
+    if (typeof v === 'string') return v + u;
+    if (typeof v === 'boolean') return String(v);
+    var x = NaN;
+    if (v !== null && v !== undefined) { try { x = +v; } catch (e) {} }
+    if (!isFinite(x)) return DASH;
+    n = (n === undefined || n === null) ? 2 : Math.round(+n);
+    return numText(x, isFinite(n) ? clamp(n, 0, 20) : 2) + u;
+  }
+  /* Colours by ROLE, from the page theme. GLM-5.3 reasoning traces spent ~10%
+     of their thinking picking colours and computing WCAG ratios by hand
+     (glm_serving/JOURNAL.md EXP-013); a role name settles it. ink/dim come
+     from theme() (>= 4.5:1, see above); the fixed pairs below are >= 5:1 on
+     white / on #0f141e. */
+  function color(name) {
+    if (Object.prototype.toString.call(name) === '[object Array]') return name;
+    if (typeof name === 'number') return series(name);
+    switch (String(name || 'ink').toLowerCase()) {
+      case 'dim': case 'muted': return DIM;
+      case 'accent': return ROLE.accent || (DARK ? [180, 220, 255] : [15, 95, 126]);
+      case 'good': case 'ok': return ROLE.good || (DARK ? [120, 230, 140] : [25, 125, 60]);
+      case 'bad': case 'warn': return ROLE.bad || (DARK ? [255, 140, 130] : [185, 40, 40]);
+      case 'line': return LINE;
+      default: return parseCol(name) || INK;
+    }
+  }
+  /* SK.col(p, colour, alpha): the colour is a role name, a series number or an
+     rgb array (color() above). Alpha is p5's 0-255; a value in (0, 1] is read
+     as a fraction: a sketch that wrote SK.col(p, c, 1) for "opaque" and 0.35
+     for "faint" drew everything at alpha 1/255 and 0.35/255, invisibly -- the
+     GPT-2 page of 2026-10-13 (logs/run_20261013_174237_283) shipped an empty
+     canvas with only the kit's own note on it. Alpha 1 of 255 is never meant. */
+  function col(p, c, a) {
+    c = color(c);
+    if (a === undefined || a === null) return p.color(c[0], c[1], c[2]);
+    a = +a;
+    if (a > 0 && a <= 1) a = a * 255;
+    return p.color(c[0], c[1], c[2], a);
+  }
+  /* themed on first use: a sketch's palette is often built before setup
+     (`const cols = [SK.series(0), ...]`), i.e. before SK.canvas themes the kit */
+  function series(i) { theme(); return SERIES[i % SERIES.length]; }
+
+  /* ---- labels and layout (EXP-015) -------------------------------------
+     Over 187 generated sketches, 1,815 object labels and 1,193 readouts were
+     drawn with raw p.text at hand-computed pixels (43% of sketches did heavy
+     pixel math), and the widget judge found overlaps / text off the canvas /
+     low contrast on 30% of pages. SK.label places the text, SK.layout the
+     regions, so the model never computes either. */
+  var LABEL_SIZE = {s: 11, m: 13, l: 16};
+  function overlaps(a, b) {
+    return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+  }
+  /* SK.label(p, text, x, y, {c, size, align}) -> the box it took.
+     x, y = the point being labelled (vertical centre of the text). The text
+     gets a halo in the ground colour (readable over any drawing), is kept
+     wholly inside the canvas, and moves off the labels already placed this
+     frame (SK.bg starts a new frame): it takes the free spot nearest to the
+     one asked for (rows above/below, then sideways). */
+  function label(p, s, x, y, o) {
+    o = o || {}; s = String(s);
+    var sz = typeof o.size === 'number' ? o.size : (LABEL_SIZE[o.size] || LABEL_SIZE.s);
+    var placed = p.__skLabels || (p.__skLabels = []);
+    p.push();
+    p.textSize(sz); p.textAlign(p.LEFT, p.CENTER);
+    var w = p.textWidth(s), h = sz * 1.3, pad = 2;
+    var x0 = o.align === 'center' ? x - w / 2 : (o.align === 'right' ? x - w : x);
+    var y0 = y - h / 2;
+    /* candidate spots nearest first: up to 6 rows up/down, up to one label
+       width left/right; ties prefer above, then right */
+    var tries = [];
+    for (var r = -6; r <= 6; r++) for (var cx = -2; cx <= 2; cx++)
+      tries.push([cx * (w / 2 + 4), r * (h + pad)]);
+    tries.sort(function (a, b) {
+      return (a[0] * a[0] + a[1] * a[1]) - (b[0] * b[0] + b[1] * b[1]) || a[1] - b[1] || b[0] - a[0];
+    });
+    var box = null;
+    for (var i = 0; i < tries.length && !box; i++) {
+      var b = {x: clamp(x0 + tries[i][0], pad, Math.max(pad, p.width - w - pad)),
+               y: clamp(y0 + tries[i][1], pad, Math.max(pad, p.height - h - pad)), w: w, h: h};
+      var free = true;
+      for (var j = 0; j < placed.length; j++) if (overlaps(b, placed[j])) { free = false; break; }
+      if (free) box = b;
+    }
+    if (!box) box = {x: clamp(x0, pad, Math.max(pad, p.width - w - pad)),
+                     y: clamp(y0, pad, Math.max(pad, p.height - h - pad)), w: w, h: h};
+    placed.push(box);
+    var c = color(o.c);
+    p.strokeJoin(p.ROUND); p.stroke(BG[0], BG[1], BG[2]); p.strokeWeight(3);
+    p.fill(c[0], c[1], c[2]); p.text(s, box.x, box.y + h / 2);
+    p.pop();
+    return box;
+  }
+  /* SK.layout(p, kind) -> named boxes {x,y,w,h}, recomputed from the canvas
+     size on every call (so a phone-width canvas gets its own). The kinds are
+     the layouts the generated sketches already used most:
+       'full'        {stage}
+       'stage|side'  {stage, side}  side = readouts / legend column (~32%)
+       'stage|plot'  {stage, plot}  the picture and a graph of the same state
+       'two'         {a, b}         two equal panels
+     Under 520 px wide the second box goes BELOW the first. */
+  function layout(p, kind, o) {
+    o = o || {}; var pad = o.pad === undefined ? 14 : o.pad, gap = o.gap === undefined ? 16 : o.gap;
+    var W = p.width - 2 * pad, H = p.height - 2 * pad, narrow = p.width < 520;
+    kind = kind || 'full';
+    if (kind === 'full') return {stage: {x: pad, y: pad, w: W, h: H}};
+    var frac = kind === 'stage|side' ? 0.68 : 0.5;
+    var A, B;
+    if (narrow) {
+      var ha = Math.round((H - gap) * (kind === 'stage|side' ? 0.66 : 0.5));
+      A = {x: pad, y: pad, w: W, h: ha}; B = {x: pad, y: pad + ha + gap, w: W, h: H - ha - gap};
+    } else {
+      var wa = Math.round((W - gap) * frac);
+      A = {x: pad, y: pad, w: wa, h: H}; B = {x: pad + wa + gap, y: pad, w: W - wa - gap, h: H};
+    }
+    if (kind === 'stage|side') return {stage: A, side: B};
+    if (kind === 'stage|plot') return {stage: A, plot: B};
+    return {a: A, b: B};
+  }
+  /* Text the kit itself draws (panel, note, legend, axis titles) is put on
+     the frame's list of taken boxes, so a later SK.label moves off it too:
+     in EXP-025c every code used SK.label and 3 pages still failed on labels
+     printed over SK.panel readouts, which the list did not know about. */
+  function reserve(p, s, x, y) {
+    try {
+      var w = p.textWidth(String(s)), sz = p.textSize() || 12, al = p.textAlign() || {};
+      var bx = al.horizontal === 'center' ? x - w / 2 : (al.horizontal === 'right' ? x - w : x);
+      var by = al.vertical === 'center' ? y - sz * 0.65 : (al.vertical === 'top' ? y : y - sz);
+      (p.__skLabels || (p.__skLabels = [])).push({x: bx, y: by, w: w, h: sz * 1.3});
+    } catch (e) {}
+  }
+  /* SK.panel / note / legend take a box from SK.layout instead of x, y */
+  function boxAt(box, dx, dy) { return {x: box.x + dx, y: box.y + dy}; }
+  function isBox(v) { return v && typeof v === 'object' && typeof v.w === 'number'; }
+
+  /* ---- direct manipulation -------------------------------------------
+     Dragging is the single most-recommended pattern in the explorable-
+     explanations literature (grab the thing itself, not a proxy control), but
+     it needs a hit-test + state machine that every sketch was hand-rolling and
+     getting wrong. `handles` does it once.
+
+     Usage:
+       var H;
+       p.setup = function () { H = SK.handles(p); H.add('a', 200, 120);
+                              SK.button(p, 'reset', function(){ H.reset(); }); }
+       p.draw  = function () { H.update(); var a = H.get('a');  ...
+                              H.draw(p); }
+     Handles are constrained to the canvas (or a supplied box) so a learner
+     cannot drag one out of sight.                                          */
+  function handles(p, box) {
+    var api = {
+      items: [], held: null, everDragged: false,
+      add: function (id, x, y, opts) {
+        opts = opts || {};
+        this.items.push({id: id, x: x, y: y, x0: x, y0: y,
+                         r: opts.r || 11, c: opts.c === undefined ? [255, 210, 90] : color(opts.c),
+                         label: opts.label || '', lockX: !!opts.lockX,
+                         lockY: !!opts.lockY});
+        return this;
+      },
+      get: function (id) {
+        for (var i = 0; i < this.items.length; i++)
+          if (this.items[i].id === id) return this.items[i];
+        return undefined;
+      },
+      clear: function () { this.items.length = 0; this.held = null; return this; },
+      reset: function () {
+        for (var i = 0; i < this.items.length; i++) {
+          this.items[i].x = this.items[i].x0; this.items[i].y = this.items[i].y0;
+        }
+        this.held = null;
+        return this;
+      },
+      /* call once per frame BEFORE reading positions */
+      update: function () {
+        var lo = box || {x: 0, y: 0, w: p.width, h: p.height};
+        if (p.mouseIsPressed) {
+          if (!this.held) {
+            var best = null, bd = 1e9;
+            for (var i = 0; i < this.items.length; i++) {
+              var it = this.items[i];
+              var d = p.dist(p.mouseX, p.mouseY, it.x, it.y);
+              if (d < it.r + 9 && d < bd) { bd = d; best = it; }
+            }
+            this.held = best;
+          }
+          if (this.held) {
+            if (!this.held.lockX) this.held.x = clamp(p.mouseX, lo.x, lo.x + lo.w);
+            if (!this.held.lockY) this.held.y = clamp(p.mouseY, lo.y, lo.y + lo.h);
+            this.everDragged = true;
+          }
+        } else { this.held = null; }
+        return this;
+      },
+      /* is the pointer over any handle right now (for cursor hints) */
+      hovering: function () {
+        for (var i = 0; i < this.items.length; i++) {
+          var it = this.items[i];
+          if (p.dist(p.mouseX, p.mouseY, it.x, it.y) < it.r + 9) return it;
+        }
+        return null;
+      },
+      draw: function (pp) {
+        pp = pp || p;
+        var hov = this.hovering();
+        for (var i = 0; i < this.items.length; i++) {
+          var it = this.items[i];
+          var active = (it === this.held) || (it === hov);
+          pp.noStroke();
+          pp.fill(it.c[0], it.c[1], it.c[2], active ? 90 : 45);
+          pp.circle(it.x, it.y, it.r * 2 + (active ? 16 : 9));
+          pp.fill(it.c[0], it.c[1], it.c[2]);
+          pp.circle(it.x, it.y, it.r * 2);
+          if (it.label) {
+            pp.fill(DIM); pp.textSize(11); pp.textAlign(pp.CENTER);
+            pp.text(it.label, it.x, it.y - it.r - 7);
+            pp.textAlign(pp.LEFT);
+          }
+        }
+        /* first-run affordance: say so, since a draggable dot is not obvious */
+        /* In the bottom-RIGHT corner and in INK: at the bottom-left, in
+           yellow at alpha 200, it sat on SK.note's line (the takeaway every
+           sketch puts there) and read 1.26:1 on the light theme; three
+           library sketches failed the admission gate on it (2026-10-14). */
+        if (!this.everDragged && this.items.length) {
+          pp.noStroke(); pp.fill(INK[0], INK[1], INK[2]); pp.textSize(12);
+          pp.textAlign(pp.RIGHT);
+          pp.text('\u2194', pp.width - 8, pp.height - 10);   /* a glyph: the page may be in any language */
+          pp.textAlign(pp.LEFT);
+        }
+        return this;
+      }
+    };
+    return api;
+  }
+
+  /* ---- hotspots: click the thing itself ---------------------------------
+     A slider is the wrong control for a CATEGORICAL choice (which word is the
+     query, which point is selected, which node fires). `hotspots` registers
+     clickable canvas regions; clicking one calls its handler. The registry is
+     exposed on the canvas element (`canvas.__skHotspots`) so the render gate
+     can click each region for real and prove it changes the picture -- the
+     same evidence a slider gives. No DOM is written.
+
+     Usage:
+       var HS;
+       p.setup = function () { HS = SK.hotspots(p); }
+       p.draw  = function () {
+         HS.clear();                              // re-register every frame
+         toks.forEach((t, i) => HS.add('tok' + i, x[i] - 40, y - 14, 80, 28,
+                                       () => { sel = i; }));
+         var hov = HS.hovering();                 // id under the pointer
+         HS.update();                             // fires handlers on click
+       }                                                                    */
+  function hotspots(p) {
+    var api = {
+      items: [], _was: false,
+      clear: function () { this.items = []; return this; },
+      add: function (id, x, y, w, h, fn) {
+        this.items.push({id: id, x: x, y: y, w: w, h: h, fn: fn});
+        return this;
+      },
+      at: function (mx, my) {
+        for (var i = this.items.length - 1; i >= 0; i--) {
+          var it = this.items[i];
+          if (mx >= it.x && mx <= it.x + it.w && my >= it.y && my <= it.y + it.h)
+            return it;
+        }
+        return null;
+      },
+      hovering: function () {
+        var it = this.at(p.mouseX, p.mouseY);
+        return it ? it.id : null;
+      },
+      _canvas: function () {
+        return p.canvas || (p._renderer && (p._renderer.canvas || p._renderer.elt)) || null;
+      },
+      _fire: function (mx, my) {
+        var it = this.at(mx, my);
+        if (it && typeof it.fn === 'function') { it.fn(it.id); return true; }
+        return false;
+      },
+      /* public aliases models reach for (a live sketch called HS.click and
+         died with "is not a function"): fire at coords, or draw nothing. */
+      click: function (mx, my) {
+        return this._fire(mx === undefined ? p.mouseX : mx,
+                          my === undefined ? p.mouseY : my);
+      },
+      draw: function () { return this; },
+      /* Real clicks are handled on the canvas's own mousedown event: a click
+         (down+up) can complete between two draw frames, so polling
+         mouseIsPressed inside draw misses it -- the render gate's synthetic
+         clicks did exactly that. Polling stays as a fallback for touch/odd
+         embeds. The listener lives on the sketch's own canvas; no DOM
+         outside the sketch is touched. */
+      _bind: function () {
+        if (this._bound) return;
+        var c = this._canvas(), self = this;
+        if (!c) return;
+        c.addEventListener('mousedown', function (e) {
+          var r = c.getBoundingClientRect();
+          var mx = (e.clientX - r.left) * (p.width / r.width);
+          var my = (e.clientY - r.top) * (p.height / r.height);
+          self._fired = self._fire(mx, my);
+        });
+        this._bound = true;
+      },
+      /* call once per frame AFTER add() */
+      update: function () {
+        this._bind();
+        var down = p.mouseIsPressed;
+        if (down && !this._was && !this._fired) this._fire(p.mouseX, p.mouseY);
+        if (!down) this._fired = false;
+        this._was = down;
+        try {   /* discoverability for the render gate; a JS property, not DOM */
+          var c = this._canvas();
+          if (c) c.__skHotspots = this.items.map(function (it) {
+            return {id: it.id, x: it.x + it.w / 2, y: it.y + it.h / 2};
+          });
+        } catch (e) {}
+        return this;
+      }
+    };
+    return api;
+  }
+
+  /* ---- forgiving aliases ----------------------------------------------
+     Observed on the easy_ru_3 benchmark: models call slider.setValue(v),
+     slider.set(v), H.clear(), C.draw() -- none exist in p5/SimKit, and one
+     such call threw inside p.draw and blanked the sketch. Cheap aliases
+     beat a dead widget. */
+  try {
+    if (typeof p5 !== 'undefined' && p5.Element && !p5.Element.prototype.setValue) {
+      p5.Element.prototype.setValue = function (v) { return this.value(v); };
+      p5.Element.prototype.set = function (v) { return this.value(v); };
+    }
+  } catch (e) {}
+  /* ---- page furniture ------------------------------------------------ */
+  /* page-toned background with a faint grid; call first in p.draw */
+  /* the ground SK.bg paints, [BG, GRID] as they are now: the render check's
+     content probe (render_probes.js page_metrics) separates what a sketch drew
+     from the kit's own background and grid with it. Not in SIM_KIT_DOC. */
+  function ground() { theme(); return [BG.slice(), GRID.slice()]; }
+  function bg(p, grid) {
+    theme();
+    p.__skLabels = [];
+    p.background(BG[0], BG[1], BG[2]);
+    if (grid !== false) {
+      p.stroke(GRID[0], GRID[1], GRID[2]); p.strokeWeight(1);
+      var st = grid || 40;
+      for (var x = st; x < p.width; x += st) p.line(x, 0, x, p.height);
+      for (var y = st; y < p.height; y += st) p.line(0, y, p.width, y);
+    }
+    p.noStroke();
+  }
+
+  /* decimals needed to write x exactly: 0.05 -> 2, 5 -> 0, 1e-7 -> 7. Rounded
+     to 12 significant digits first: a step computed as 3 * 0.1 is
+     0.30000000000000004 and would otherwise ask for 17 decimals. */
+  function decimalsOf(x) {
+    x = Math.abs(+x);
+    if (!isFinite(x)) return 0;
+    var m = /^\d*\.?(\d*)(?:e([+-]?\d+))?$/i.exec(String(+x.toPrecision(12)));
+    return m ? Math.max(0, m[1].length - (m[2] ? +m[2] : 0)) : 0;
+  }
+  /* what a control shows as text (tags and entities resolved by the browser) */
+  function plainText(el) {
+    try { return String(el.elt.textContent || '').replace(/\s+/g, ' ').trim(); } catch (e) { return ''; }
+  }
+  /* aria-label from the visible text, so a terse or glyph-only control still
+     has an accessible name */
+  function named(el) {
+    var t = plainText(el);
+    if (t) { try { el.attribute('aria-label', t); } catch (e) {} }
+    return el;
+  }
+  /* the live value after a slider (see SK.slider). Failing to build it must
+     never cost the reader the slider itself. */
+  function readout(p, s, box, mn, step, o) {
+    try {
+      var st = +step, fixed = null;
+      if (o.digits !== undefined && o.digits !== null && isFinite(+o.digits)) fixed = clamp(Math.round(+o.digits), 0, 10);
+      else if (st > 0) fixed = Math.min(6, Math.max(decimalsOf(st), decimalsOf(mn)));
+      var unit = unitText(o.unit);
+      var out = p.createSpan(''); out.addClass('sk-val'); out.parent(box);
+      /* inline: the page CSS belongs to the renderer, and tabular figures keep
+         the number from jittering while the slider is dragged */
+      out.elt.style.cssText = 'font-variant-numeric:tabular-nums;font-weight:600;margin:0 0 0 2px';
+      var last = null;
+      var show = function () {
+        var x = parseFloat(s.elt.value), t = DASH;
+        if (isFinite(x)) {
+          t = fixed === null ? trimZeros(numText(x, 2)) : numText(x, fixed);
+          if (x !== 0 && !/[1-9]/.test(t)) t = sigText(x);       /* never "0,000000" for a value that is not zero */
+          t += unit;
+        }
+        if (t === last) return;
+        last = t; out.elt.textContent = t;
+        s.elt.setAttribute('aria-valuetext', t);
+      };
+      s.elt.addEventListener('input', show);
+      s.elt.addEventListener('change', show);
+      var setValue = s.value;
+      s.value = function () { var r = setValue.apply(this, arguments); if (arguments.length) show(); return r; };
+      show();
+    } catch (e) {}
+  }
+  /* slider with its label, the LIVE VALUE after it, and an optional one-line
+     HINT under that saying what moving it MEANS ("smaller step -> secant hugs
+     the tangent"). DOM order inside the .sk-ctl box: label span, range input,
+     .sk-val readout, .sk-hint. The label span stays the slider's previous
+     sibling: the render gate and the drift probe read it.
+
+     WHY the readout: a slider with no number on it cannot be set to "the
+     value from the task". Raters wrote "sliders have no numeric indicator of
+     the current value" on 13 of 737 Russian pages (11 of them Opus) and "the
+     parameters from the task cannot be set". It is formatted with SK.fmt, with
+     as many digits as the step has decimals (0.1 -> 1, 0.05 -> 2, 1 -> 0; the
+     min counts too, the values being min + k * step), and with no step up to 2
+     digits, trailing zeros trimmed. A value that is not zero is never shown as
+     all zeros: it falls back to two significant digits (5e-7 -> 5,0e-7).
+
+     7th argument: the hint string (as before), or {hint, unit, digits, show}:
+     unit is appended after a no-break space, digits overrides the rule above,
+     show: false leaves the readout out (a sketch that draws its own).
+
+     The readout follows 'input' and 'change', and also .value(v) /
+     .setValue(v) / .set(v) -- SimSpec presets and sketch reset buttons move
+     the slider that way, and setting a value from code fires no event. The
+     listener is a plain DOM one, not p5's slider.input(fn): p5 keeps ONE
+     handler per event, so a sketch's own slider.input(fn) would silently
+     detach ours. The slider also gets aria-label (its label text) and
+     aria-valuetext (the readout text). */
+  function slider(p, label, mn, mx, val, step, hint) {
+    var o = (hint && typeof hint === 'object' && !Array.isArray(hint)) ? hint : {hint: hint};
+    var box = p.createDiv(''); box.addClass('sk-ctl');
+    var sp = null;
+    if (label) { sp = p.createSpan(label + ' '); sp.parent(box); }
+    var s = p.createSlider(mn, mx, val, step); s.parent(box);
+    if (sp) { var nm = plainText(sp); if (nm) { try { s.attribute('aria-label', nm); } catch (e) {} } }
+    if (o.show !== false) readout(p, s, box, mn, step, o);
+    if (o.hint) { var h = p.createDiv(o.hint); h.addClass('sk-hint'); h.parent(box); }
+    return s;
+  }
+  function button(p, label, fn) {
+    var b = p.createButton(label);
+    named(b);
+    b.mousePressed(fn); keyActivate(b, fn);
+    return b;
+  }
+  /* named interesting states: [[label, fn], ...] -> a row of buttons; the
+     clicked one is marked active. Use for "Earth / Moon / Jupiter",
+     "in phase / antiphase / beats", "circular / ellipse / escape". */
+  function presets(p, items, active) {
+    var row = p.createDiv(''); row.addClass('sk-presets');
+    var btns = [];
+    function mark(k) {
+      for (var j = 0; j < btns.length; j++) {
+        if (j === k) btns[j].addClass('active'); else btns[j].removeClass('active');
+        /* the state a screen reader hears, not only the fill (WCAG 4.1.2) */
+        btns[j].attribute('aria-pressed', j === k ? 'true' : 'false');
+      }
+    }
+    for (var i = 0; i < items.length; i++) {
+      (function (k) {
+        var b = p.createButton(items[k][0]); named(b); b.parent(row); b.addClass('sk-preset'); b.attribute('aria-pressed', 'false');
+        var onPick = function () { mark(k); items[k][1](); };
+        b.mousePressed(onPick); keyActivate(b, onPick);
+        btns.push(b);
+      })(i);
+    }
+    if (active !== undefined && btns[active]) mark(active);
+    return {row: row, buttons: btns, mark: mark, draw: function () {}};
+  }
+  /* live readout TILES under the canvas: [[label, value, highlight?], ...].
+     Call every frame; the DOM is created once and only text is updated.
+     Prefer this over SK.panel for the numbers the prose talks about. */
+  function tiles(p, items) {
+    var t = p.__skTiles;
+    if (!t || t.n !== items.length) {
+      if (t && t.box) t.box.remove();
+      var box = p.createDiv(''); box.addClass('sk-tiles');
+      var cells = [];
+      for (var i = 0; i < items.length; i++) {
+        var c = p.createDiv(''); c.addClass('sk-tile'); c.parent(box);
+        var k = p.createSpan(''); k.addClass('k'); k.parent(c);
+        var v = p.createSpan(''); v.addClass('v'); v.parent(c);
+        cells.push({c: c, k: k, v: v, lk: null, lv: null});
+      }
+      t = p.__skTiles = {box: box, cells: cells, n: items.length};
+    }
+    for (var j = 0; j < items.length; j++) {
+      var it = items[j], cell = t.cells[j];
+      var lk = String(it[0]), lv = String(it[1]);
+      if (cell.lk !== lk) { cell.k.html(lk); cell.lk = lk; }
+      if (cell.lv !== lv) { cell.v.html(lv); cell.lv = lv; }
+      if (it[2]) cell.c.addClass('hl'); else cell.c.removeClass('hl');
+    }
+    return t;
+  }
+  /* readout panel: array of strings, or [string, colour] pairs */
+  function panel(p, lines, x, y, lh) {
+    if (isBox(x)) { lh = y; var q = boxAt(x, 8, 18); x = q.x; y = q.y; }
+    x = x === undefined ? 12 : x; y = y === undefined ? 20 : y;
+    lh = lh || 20;
+    p.noStroke();
+    for (var i = 0; i < lines.length; i++) {
+      var ln = lines[i];
+      if (Object.prototype.toString.call(ln) === '[object Array]') {
+        p.fill(col(p, ln[1])); p.text(ln[0], x, y + i * lh); reserve(p, ln[0], x, y + i * lh);
+      } else { p.fill(INK[0], INK[1], INK[2]); p.text(ln, x, y + i * lh); reserve(p, ln, x, y + i * lh); }
+    }
+  }
+  function note(p, s, x, y) {
+    if (isBox(x)) { var q = boxAt(x, 8, x.h - 10); x = q.x; y = q.y; }
+    var c = DARK ? [180, 220, 255] : [15, 95, 126];
+    x = x === undefined ? 12 : x; y = y === undefined ? p.height - 14 : y;
+    p.noStroke(); p.fill(c[0], c[1], c[2]); p.text(s, x, y); reserve(p, s, x, y);
+  }
+  function legend(p, items, x, y) {
+    if (isBox(x)) { var q = boxAt(x, 8, 18); x = q.x; y = q.y; }
+    p.noStroke();
+    for (var i = 0; i < items.length; i++) {
+      var c = items[i][1] || series(i);
+      p.fill(col(p, c)); p.rect(x, y + i * 18 - 8, 10, 10, 2);
+      p.fill(DIM[0], DIM[1], DIM[2]); p.text(items[i][0], x + 16, y + i * 18);
+      reserve(p, items[i][0], x + 16, y + i * 18);
+    }
+  }
+
+  /* ---- plotting ------------------------------------------------------ */
+  /* box = {x, y, w, h} in pixels; data domain given by lo/hi */
+  function axes(p, box, opts) {
+    opts = opts || {};
+    /* the plot boxes of this frame, on the canvas element: the render check's
+       empty-band probe counts a plot's empty inside as used (its axis lines
+       are near the grid colour and read as ground) */
+    try { var cv = p.canvas, f = p.frameCount;
+      if (cv) { if (!cv.__skAxes || cv.__skAxes.f !== f) cv.__skAxes = {f: f, pw: p.width, boxes: []};
+        cv.__skAxes.boxes.push([box.x, box.y, box.w, box.h]); } } catch (e) {}
+    p.stroke(LINE[0], LINE[1], LINE[2]); p.strokeWeight(1);
+    p.line(box.x, box.y + box.h, box.x + box.w, box.y + box.h);
+    p.line(box.x, box.y, box.x, box.y + box.h);
+    p.noStroke(); p.fill(DIM[0], DIM[1], DIM[2]);
+    /* Axis titles sit outside the box when there is room, inside it when the
+       box reaches the canvas edge -- the render gate measured 't, с' cut off
+       at the bottom of 4 of 8 benchmark sketches that used this helper. */
+    if (opts.xlabel) {
+      var xw = p.textWidth(opts.xlabel), xx = box.x + box.w - xw - 4;
+      var xy = (box.y + box.h + 20 <= p.height - 2) ? box.y + box.h + 16 : box.y + box.h - 6;
+      p.text(opts.xlabel, Math.max(box.x + 2, xx), xy); reserve(p, opts.xlabel, Math.max(box.x + 2, xx), xy);
+    }
+    if (opts.ylabel) {
+      var yy = (box.y - 6 >= 12) ? box.y - 6 : box.y + 14;
+      p.text(opts.ylabel, box.x + 4, yy); reserve(p, opts.ylabel, box.x + 4, yy);
+    }
+    if (opts.zero !== undefined && opts.lo !== undefined) {
+      var zy = box.y + box.h - map(opts.zero, opts.lo, opts.hi, 0, box.h);
+      p.stroke(LINE[0], LINE[1], LINE[2]); p.line(box.x, zy, box.x + box.w, zy);
+      p.noStroke();
+    }
+  }
+  /* plot an array of numbers (or {x,y}) as a polyline inside box */
+  function plot(p, box, data, opts) {
+    opts = opts || {};
+    if (!data || !data.length) return;
+    var flat = typeof data[0] === 'number';
+    var lo = opts.lo, hi = opts.hi;
+    if (lo === undefined || hi === undefined) {
+      lo = Infinity; hi = -Infinity;
+      for (var i = 0; i < data.length; i++) {
+        var v = flat ? data[i] : data[i].y;
+        if (v < lo) lo = v; if (v > hi) hi = v;
+      }
+      if (hi - lo < 1e-9) { hi = lo + 1; lo -= 1; }
+    }
+    var c = opts.color || series(opts.i || 0);
+    p.stroke(col(p, c)); p.strokeWeight(opts.weight || 2); p.noFill();
+    p.beginShape();
+    for (var j = 0; j < data.length; j++) {
+      var y = flat ? data[j] : data[j].y;
+      var xf = flat ? (data.length > 1 ? j / (data.length - 1) : 0)
+                    : map(data[j].x, opts.xlo || 0, opts.xhi || 1, 0, 1);
+      p.vertex(box.x + xf * box.w,
+               box.y + box.h - map(clamp(y, lo, hi), lo, hi, 0, box.h));
+    }
+    p.endShape();
+    return {lo: lo, hi: hi};
+  }
+  /* histogram of raw samples; returns the bin counts */
+  function hist(p, box, samples, nbins, opts) {
+    opts = opts || {}; nbins = nbins || 30;
+    var lo = opts.lo, hi = opts.hi, i;
+    if (lo === undefined) { lo = Math.min.apply(null, samples); }
+    if (hi === undefined) { hi = Math.max.apply(null, samples); }
+    if (hi - lo < 1e-9) hi = lo + 1;
+    var bins = new Array(nbins);
+    for (i = 0; i < nbins; i++) bins[i] = 0;
+    for (i = 0; i < samples.length; i++) {
+      var b = Math.floor((samples[i] - lo) / (hi - lo) * nbins);
+      /* the last bin is closed: a sample equal to hi belongs in it. It was
+         dropped, so with the default range (hi = the maximum) the largest
+         sample was ALWAYS missing (2709_audit.md js-runtime-04); the spec
+         engine already bins this way */
+      if (b === nbins && samples[i] <= hi) b = nbins - 1;
+      if (b >= 0 && b < nbins) bins[b]++;
+    }
+    var mx = opts.max || Math.max(1, Math.max.apply(null, bins));
+    var c = opts.color || series(opts.i || 0);
+    p.noStroke(); p.fill(col(p, c, opts.alpha === undefined ? 200 : opts.alpha));
+    var bw = box.w / nbins;
+    for (i = 0; i < nbins; i++) {
+      var h = (bins[i] / mx) * box.h;
+      p.rect(box.x + i * bw, box.y + box.h - h, Math.max(bw - 1, 1), h);
+    }
+    return bins;
+  }
+  function bars(p, box, values, opts) {
+    opts = opts || {};
+    var mx = opts.max || Math.max(1, Math.max.apply(null, values));
+    var bw = box.w / values.length;
+    p.noStroke();
+    for (var i = 0; i < values.length; i++) {
+      p.fill(col(p, opts.color || series(i), opts.alpha));
+      var h = (values[i] / mx) * box.h;
+      p.rect(box.x + i * bw, box.y + box.h - h, Math.max(bw - 2, 1), h);
+    }
+  }
+  /* fixed-length rolling buffer: h = SK.history(300); h.push(v); h.data */
+  function history(n) {
+    return {
+      data: [], cap: n || 300,
+      push: function (v) {
+        this.data.push(v);
+        if (this.data.length > this.cap) this.data.shift();
+        return this;
+      },
+      clear: function () { this.data = []; return this; },
+      last: function () { return this.data[this.data.length - 1]; }
+    };
+  }
+
+  /* ---- geometry / vectors -------------------------------------------- */
+  function arrow(p, x, y, dx, dy, c, label) {
+    c = c || series(0);
+    p.stroke(col(p, c)); p.strokeWeight(3);
+    p.line(x, y, x + dx, y + dy);
+    var a = Math.atan2(dy, dx);
+    p.push(); p.translate(x + dx, y + dy); p.rotate(a);
+    p.noStroke(); p.fill(col(p, c));
+    p.triangle(0, 0, -11, 4.5, -11, -4.5);
+    p.pop();
+    if (label) { p.noStroke(); p.fill(col(p, c));
+                 /* label beyond the tip, on the side the arrow points to, kept
+                    inside the canvas (a left-pointing F1 near the edge used
+                    to print at x=-49 and fail the text-layout gate) */
+                 var tw = p.textWidth(label), lx = dx < 0 ? x + dx - 7 - tw : x + dx + 7;
+                 var ly = y + dy - 6;
+                 lx = Math.max(4, Math.min(p.width - tw - 4, lx));
+                 ly = Math.max(14, Math.min(p.height - 6, ly));
+                 p.text(label, lx, ly); }
+  }
+  /* ---- block diagrams ------------------------------------------------
+     A third of the sketches authors write are bespoke diagrams (boxes,
+     labels, arrows: docs/sim_spec_v1.md section 1), and their labels were the
+     text-layout gate's commonest failure: a label wider than its box, an
+     arrow tip on the next box's text, literal colours that vanish on the
+     light host (2026-10-15). SK.node fits its label to the box (shrinks to
+     10 px, then ellipsizes), SK.link runs border to border, both colour
+     through the theme, both leave the sketch's fill/stroke/text state alone. */
+  function fitLabel(p, s, w, big, small) {
+    s = String(s); var sz = big; p.textSize(sz);
+    while (sz > small && p.textWidth(s) > w) { sz -= 1; p.textSize(sz); }
+    if (p.textWidth(s) > w) { while (s.length > 1 && p.textWidth(s + '\u2026') > w) s = s.slice(0, -1); s += '\u2026'; }
+    return s;
+  }
+  function tone(c) { return (c === undefined || c === null) ? series(0) : (typeof c === 'number' ? series(c) : c); }
+  function node(p, x, y, w, h, label, o) {
+    o = o || {};
+    var c = tone(o.c), r = {x: x, y: y, w: w, h: h, cx: x + w / 2, cy: y + h / 2};
+    p.push();
+    p.rectMode(p.CORNER);
+    if (o.dim) { p.fill(col(p, DIM, 22)); p.stroke(col(p, DIM, 110)); p.strokeWeight(1); }
+    else if (o.hl) { p.fill(col(p, c, 75)); p.stroke(col(p, c)); p.strokeWeight(2.5); }
+    else { p.fill(col(p, c, 32)); p.stroke(col(p, c, 190)); p.strokeWeight(1.25); }
+    p.rect(x, y, w, h, o.r === undefined ? 7 : o.r);
+    p.noStroke(); p.textAlign(p.CENTER, p.BASELINE);
+    var sub = (o.sub === undefined || o.sub === null || o.sub === '') ? null : String(o.sub);
+    var big = o.size || 13, main, a1, d1, s1, subT, a2, d2, s2;
+    /* two lines by the font's own ascent/descent (what the text-layout gate
+       measures): 13/11 px, else 12/10, else 11/9; a box too low even for
+       that keeps the label and drops the sub-line rather than overprint */
+    for (var tries = 0; tries < 3; tries++) {
+      main = fitLabel(p, label, w - 10, big - tries, 10); a1 = p.textAscent(); d1 = p.textDescent(); s1 = p.textSize();
+      if (!sub) break;
+      subT = fitLabel(p, sub, w - 10, 11 - tries, 9); a2 = p.textAscent(); d2 = p.textDescent(); s2 = p.textSize();
+      if (a1 + d1 + 2 + a2 + d2 <= h - 2) break;
+      if (tries === 2) { sub = null; main = fitLabel(p, label, w - 10, big, 10); a1 = p.textAscent(); d1 = p.textDescent(); s1 = p.textSize(); }
+    }
+    /* secondary text half-way between INK and DIM: plain DIM on the box's
+       tint fell under 4.5:1 on the light host (render check, 2026-10-15) */
+    var soft = mix(INK, DIM, 0.5);
+    if (sub) {
+      var top = r.cy - (a1 + d1 + 2 + a2 + d2) / 2;
+      p.textSize(s1); p.fill(col(p, o.dim ? soft : INK)); p.text(main, r.cx, top + a1);
+      p.textSize(s2); p.fill(col(p, o.hl ? INK : soft)); p.text(subT, r.cx, top + a1 + d1 + 2 + a2);   /* a highlighted box is tinted darker */
+    } else {
+      p.textSize(s1); p.fill(col(p, o.dim ? soft : INK)); p.text(main, r.cx, r.cy + (a1 - d1) / 2);
+    }
+    p.pop();
+    return r;
+  }
+  function centreOf(r) { return r.w ? {x: r.x + r.w / 2, y: r.y + r.h / 2} : {x: r.x, y: r.y}; }
+  function rim(r, tx, ty) {
+    var c = centreOf(r); if (!r.w) return c;
+    var dx = tx - c.x, dy = ty - c.y; if (!dx && !dy) return c;
+    var sx = dx ? (r.w / 2) / Math.abs(dx) : Infinity, sy = dy ? (r.h / 2) / Math.abs(dy) : Infinity, k = Math.min(sx, sy);
+    return {x: c.x + dx * k, y: c.y + dy * k};
+  }
+  function link(p, a, b, o) {
+    o = o || {};
+    var ca = centreOf(a), cb = centreOf(b), s = rim(a, cb.x, cb.y), e = rim(b, ca.x, ca.y);
+    var L = Math.hypot(e.x - s.x, e.y - s.y) || 1, ux = (e.x - s.x) / L, uy = (e.y - s.y) / L;
+    if (b.w) { e = {x: e.x - ux * 2, y: e.y - uy * 2}; }
+    var c = o.dim ? DIM : (o.hl ? series(1) : (o.c === undefined ? DIM : tone(o.c)));
+    var head = o.head !== false, hw = o.hl ? 9 : 7;
+    p.push();
+    p.stroke(col(p, c, o.dim ? 110 : 255)); p.strokeWeight(o.hl ? 2.5 : 1.5); p.noFill();
+    if (o.dash) dash(p, [5, 4]);
+    p.line(s.x, s.y, head ? e.x - ux * hw : e.x, head ? e.y - uy * hw : e.y);
+    if (o.dash) dash(p);
+    if (head) {
+      p.noStroke(); p.fill(col(p, c, o.dim ? 110 : 255));
+      p.triangle(e.x, e.y, e.x - ux * hw - uy * hw * 0.5, e.y - uy * hw + ux * hw * 0.5,
+                 e.x - ux * hw + uy * hw * 0.5, e.y - uy * hw - ux * hw * 0.5);
+    }
+    if (typeof o.t === 'number' && !o.dim) {
+      var t = o.t - Math.floor(o.t), px = s.x + (e.x - s.x) * t, py = s.y + (e.y - s.y) * t;
+      p.noStroke(); p.fill(col(p, o.c === undefined ? series(1) : tone(o.c))); p.circle(px, py, 9);
+    }
+    var mx = (s.x + e.x) / 2, my = (s.y + e.y) / 2;
+    if (o.label) {
+      p.noStroke(); p.textSize(10); p.textAlign(p.CENTER, p.BASELINE);
+      var txt = fitLabel(p, o.label, Math.max(40, L + 30), 11, 9), tw = p.textWidth(txt);
+      /* beside a vertical arrow, above a horizontal one */
+      var lx = Math.abs(uy) > 0.7 ? mx + 6 + tw / 2 : mx, ly = Math.abs(uy) > 0.7 ? my + 4 : my - 6;
+      lx = clamp(lx, tw / 2 + 3, p.width - tw / 2 - 3); ly = clamp(ly, 12, p.height - 4);
+      p.fill(col(p, o.hl ? INK : mix(INK, DIM, 0.5))); p.text(txt, lx, ly);
+    }
+    p.pop();
+    return {x1: s.x, y1: s.y, x2: e.x, y2: e.y, mx: mx, my: my};
+  }
+  /* n boxes in a row across the canvas: the stages of a pipeline */
+  function row(p, n, y, h, o) {
+    o = o || {}; var pad = o.pad === undefined ? 10 : o.pad, gap = o.gap === undefined ? 22 : o.gap;
+    var w = (p.width - 2 * pad - gap * (n - 1)) / n, out = [];
+    for (var i = 0; i < n; i++) out.push({x: pad + i * (w + gap), y: y, w: w, h: h});
+    return out;
+  }
+  function ramp(p, t, cold, warm) {
+    t = clamp(t, 0, 1);
+    cold = cold || [40, 90, 160]; warm = warm || [255, 170, 90];
+    return p.color(lerp(cold[0], warm[0], t), lerp(cold[1], warm[1], t),
+                   lerp(cold[2], warm[2], t));
+  }
+  function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+  /* dashed strokes: SK.dash(p, [5, 4]) dashes every following line, SK.dash(p)
+     goes back to solid. p5 has no dash API, and 63 % of DeepSeek's thinking
+     drafts deliberated how to draw one; written without thinking they called
+     p.setLineDash, which does not exist, and died in p.draw (2026-10-20,
+     docs/results/micro_reasoning_traces_2026-10-20.md). */
+  function dash(p, pattern) {
+    try { p.drawingContext.setLineDash(pattern && pattern.length ? pattern : []); } catch (e) {}
+  }
+
+  /* ---- motion / collision -------------------------------------------- */
+  /* semi-implicit Euler: q needs x,y,vx,vy; acc = {ax, ay} */
+  function step(q, ax, ay, dt) {
+    dt = dt === undefined ? 1 : dt;
+    q.vx += (ax || 0) * dt; q.vy += (ay || 0) * dt;
+    q.x += q.vx * dt; q.y += q.vy * dt;
+    return q;
+  }
+  function drag(q, k) { q.vx *= (1 - k); q.vy *= (1 - k); return q; }
+  /* reflect off the inside of a box; damp 1 = elastic. returns true on hit */
+  function bounceWalls(q, box, damp, r) {
+    damp = damp === undefined ? 1 : damp; r = r || 0;
+    var hit = false;
+    if (q.x < box.x + r) { q.x = box.x + r; q.vx = Math.abs(q.vx) * damp; hit = true; }
+    if (q.x > box.x + box.w - r) { q.x = box.x + box.w - r; q.vx = -Math.abs(q.vx) * damp; hit = true; }
+    if (q.y < box.y + r) { q.y = box.y + r; q.vy = Math.abs(q.vy) * damp; hit = true; }
+    if (q.y > box.y + box.h - r) { q.y = box.y + box.h - r; q.vy = -Math.abs(q.vy) * damp; hit = true; }
+    return hit;
+  }
+  /* 1-D collision with restitution e (1 elastic, 0 perfectly inelastic).
+     a and b need .v and .m. Momentum is conserved for any e. */
+  function collide1d(a, b, e) {
+    e = e === undefined ? 1 : e;
+    var M = a.m + b.m, va = a.v, vb = b.v;
+    a.v = (a.m * va + b.m * vb - b.m * e * (va - vb)) / M;
+    b.v = (a.m * va + b.m * vb + a.m * e * (va - vb)) / M;
+  }
+  /* 2-D circle-circle collision along the line of centres */
+  function collideCircles(a, b, e) {
+    e = e === undefined ? 1 : e;
+    var dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy);
+    var r = (a.r || 8) + (b.r || 8);
+    if (d === 0 || d > r) return false;
+    var nx = dx / d, ny = dy / d;
+    var rel = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny;
+    if (rel > 0) return false;
+    var ma = a.m || 1, mb = b.m || 1;
+    var j = -(1 + e) * rel / (1 / ma + 1 / mb);
+    a.vx -= j * nx / ma; a.vy -= j * ny / ma;
+    b.vx += j * nx / mb; b.vy += j * ny / mb;
+    var overlap = (r - d) / 2;
+    a.x -= nx * overlap; a.y -= ny * overlap;
+    b.x += nx * overlap; b.y += ny * overlap;
+    return true;
+  }
+  /* seed n particles inside box with random velocities */
+  function particles(p, n, box, spd) {
+    spd = spd === undefined ? 1.5 : spd;
+    var out = [];
+    for (var i = 0; i < n; i++)
+      out.push({x: p.random(box.x, box.x + box.w),
+                y: p.random(box.y, box.y + box.h),
+                vx: p.random(-spd, spd), vy: p.random(-spd, spd),
+                m: 1, r: 4});
+    return out;
+  }
+
+  /* ---- grids ---------------------------------------------------------- */
+  function grid(w, h, fill) {
+    var g = [];
+    for (var i = 0; i < w * h; i++)
+      g.push(typeof fill === 'function' ? fill(i % w, Math.floor(i / w)) : (fill || 0));
+    g.w = w; g.h = h;
+    return g;
+  }
+  function at(g, x, y) {
+    if (x < 0 || y < 0 || x >= g.w || y >= g.h) return undefined;
+    return g[y * g.w + x];
+  }
+  /* live neighbour values (undefined off-grid entries are skipped) */
+  function neighbours(g, x, y, diag) {
+    var d = diag
+      ? [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]]
+      : [[1,0],[-1,0],[0,1],[0,-1]];
+    var out = [];
+    for (var i = 0; i < d.length; i++) {
+      var v = at(g, x + d[i][0], y + d[i][1]);
+      if (v !== undefined) out.push(v);
+    }
+    return out;
+  }
+  function drawGrid(p, g, box, colourFn) {
+    var cw = box.w / g.w, ch = box.h / g.h;
+    p.noStroke();
+    for (var y = 0; y < g.h; y++)
+      for (var x = 0; x < g.w; x++) {
+        p.fill(colourFn(g[y * g.w + x], x, y));
+        p.rect(box.x + x * cw, box.y + y * ch,
+               Math.max(cw - 0.6, 1), Math.max(ch - 0.6, 1));
+      }
+  }
+
+  /* ---- statistics ----------------------------------------------------- */
+  function mean(a) {
+    var s = 0;
+    for (var i = 0; i < a.length; i++) s += a[i];
+    return a.length ? s / a.length : 0;
+  }
+  function sd(a) {
+    var m = mean(a), s = 0;
+    for (var i = 0; i < a.length; i++) s += (a[i] - m) * (a[i] - m);
+    return a.length > 1 ? Math.sqrt(s / (a.length - 1)) : 0;
+  }
+  /* least-squares fit of {x,y} points -> {m, c} */
+  function fitLine(pts) {
+    var n = pts.length, sx = 0, sy = 0, sxy = 0, sxx = 0;
+    for (var i = 0; i < n; i++) {
+      sx += pts[i].x; sy += pts[i].y;
+      sxy += pts[i].x * pts[i].y; sxx += pts[i].x * pts[i].x;
+    }
+    var den = n * sxx - sx * sx;
+    var m = den === 0 ? 0 : (n * sxy - sx * sy) / den;
+    return {m: m, c: n ? (sy - m * sx) / n : 0};
+  }
+
+  var api = {
+    INK: INK, DIM: DIM, SERIES: SERIES, BG: BG,   /* replaced by live getters below */
+    series: series, color: color, label: label, layout: layout,
+    clamp: clamp, lerp: lerp, map: map, fmt: fmt, col: col,
+    bg: bg, theme: theme, _ground: ground, canvas: canvas, panels: panels, caption: caption,
+    trail: trail, playbar: playbar,
+    slider: slider, button: button, presets: presets, tiles: tiles,
+    panel: panel, note: note,
+    legend: legend,
+    axes: axes, plot: plot, hist: hist, bars: bars, history: history,
+    arrow: arrow, ramp: ramp, dist: dist, dash: dash,
+    node: node, link: link, row: row,
+    step: step, drag: drag, bounceWalls: bounceWalls,
+    collide1d: collide1d, collideCircles: collideCircles, particles: particles,
+    grid: grid, at: at, neighbours: neighbours, drawGrid: drawGrid,
+    mean: mean, sd: sd, fitLine: fitLine,
+    handles: handles, hotspots: hotspots
+  };
+  /* Live getters: these were exported as values once, so after theme() ran on
+     a light page SK.INK still held the dark default (light text on light). */
+  /* The setter keeps SimSpec's facade working: it does Object.create(SK) and
+     assigns its own INK/DIM in strict mode, which throws on a getter alone. */
+  function live(name, read) {
+    Object.defineProperty(api, name, {enumerable: true, configurable: true,
+      get: function () { theme(); return read(); },
+      set: function (v) { Object.defineProperty(this, name, {value: v, writable: true, enumerable: true, configurable: true}); }});
+  }
+  live('INK', function () { return INK; });
+  live('DIM', function () { return DIM; });
+  live('SERIES', function () { return SERIES; });
+  /* the canvas ground: the colour for text ON a solid series shape (dark on
+     the dark theme's bright shapes, light on the light theme's dark ones) */
+  live('BG', function () { return BG; });
+  return api;
+})();
+/* @text-box: begin (also the render gate's recorder -- src/render_check.py) */
+function SK_textBox(p, str, x, y, w, h) {
+  var lines = String(str).split('\n');
+  var sz = 12; try { sz = p.textSize() || 12; } catch (e) {}
+  var lead = sz * 1.25; try { lead = p.textLeading() || lead; } catch (e) {}
+  var tw = 0;
+  for (var i = 0; i < lines.length; i++) { var lw = 0; try { lw = p.textWidth(lines[i]); } catch (e) {} if (lw > tw) tw = lw; }
+  var al = {horizontal: 'left', vertical: 'alphabetic'};
+  try { var t = p.textAlign(); if (t && t.horizontal) al = t; } catch (e) {}
+  var asc = sz * 0.8, desc = sz * 0.22;
+  try { asc = p.textAscent() || asc; desc = p.textDescent() || desc; } catch (e) {}
+  if (typeof w === 'number' && w > 0) {
+    var bh = (typeof h === 'number' && h > 0) ? h : lines.length * lead;
+    var bx = x; if (al.horizontal === 'center') bx = x - w / 2; else if (al.horizontal === 'right') bx = x - w;
+    return {x: bx, y: y, w: w, h: bh};
+  }
+  var th = (lines.length - 1) * lead + asc + desc;
+  var bx2 = x; if (al.horizontal === 'center') bx2 = x - tw / 2; else if (al.horizontal === 'right') bx2 = x - tw;
+  var by;
+  switch (al.vertical) {
+    case 'top': by = y; break;
+    case 'center': case 'middle': by = y - th / 2; break;
+    case 'bottom': by = y - th; break;
+    default: by = y - asc;
+  }
+  return {x: bx2, y: by, w: tw, h: th};
+}
+/* @text-box: end */
+/* Text guard: canvas labels stay INSIDE the canvas and OFF each other.
+   A label placed past the edge (axis title at width-60 on a narrow column) is
+   nudged back in; a label that would land on a label already drawn this
+   frame is moved down (or up, near the bottom) a line so both read. The
+   render gate still sees the original position (this.__skLastOrig) and the
+   nudge (this.__skLastNudge): the edge case stays a blocking report, the
+   overlap fix is reported as advisory -- measured over 4 benchmark sets, label
+   overlaps were the single largest cause of revision rounds (60-100 s each),
+   and the model rarely fixed them on the first retry. Rotated/scaled frames,
+   multi-line and boxed text (text(s,x,y,w,h)) are left alone. */
+(function () {
+  function inter(a, b) {
+    var x0 = Math.max(a.x, b.x), y0 = Math.max(a.y, b.y);
+    var x1 = Math.min(a.x + a.w, b.x + b.w), y1 = Math.min(a.y + a.h, b.y + b.h);
+    return Math.max(0, x1 - x0) * Math.max(0, y1 - y0);
+  }
+  function frameBoxes(p) {
+    var cv = p.canvas || (p._renderer && p._renderer.canvas); if (!cv) return null;
+    var f = cv.__skFrame;
+    if (!f || f.frame !== p.frameCount) f = cv.__skFrame = {frame: p.frameCount, boxes: []};
+    return f.boxes;
+  }
+  function guard(P) {
+    if (!P || !P.prototype || P.prototype.__skGuard) return;
+    var o = P.prototype.text; if (typeof o !== 'function') return;
+    P.prototype.__skGuard = true;
+    var oBg = P.prototype.background;
+    if (typeof oBg === 'function') P.prototype.background = function () {
+      var out = oBg.apply(this, arguments);
+      try { var cv = this.canvas || (this._renderer && this._renderer.canvas);
+        if (cv) cv.__skFrame = {frame: this.frameCount, boxes: []}; } catch (e) {}
+      return out;
+    };
+    P.prototype.text = function (str, x, y, w, h) {
+      var a = Array.prototype.slice.call(arguments);
+      try {
+        var s = String(str);
+        if (typeof x === 'number' && typeof y === 'number' && isFinite(x) && isFinite(y) &&
+            typeof w !== 'number' && this.width > 0 && str !== undefined && s.trim() && s.indexOf('\n') < 0) {
+          var m = this.drawingContext.getTransform(), d = this.pixelDensity ? this.pixelDensity() : 1;
+          if (Math.abs(m.b) < 1e-6 && Math.abs(m.c) < 1e-6 && Math.abs(m.a - d) < 1e-6 && Math.abs(m.d - d) < 1e-6) {
+            var tx = m.e / d, ty = m.f / d, b = SK_textBox(this, s, x, y), pad = 2, nx = x, ny = y;
+            var fits = b.w <= this.width - 2 * pad && b.h <= this.height - 2 * pad;
+            if (fits) {
+              if (b.x + tx < pad) nx += pad - (b.x + tx);
+              else if (b.x + b.w + tx > this.width - pad) nx -= (b.x + b.w + tx) - (this.width - pad);
+              if (b.y + ty < pad) ny += pad - (b.y + ty);
+              else if (b.y + b.h + ty > this.height - pad) ny -= (b.y + b.h + ty) - (this.height - pad);
+            }
+            /* collision with labels already drawn this frame (canvas coords) */
+            var boxes = frameBoxes(this), nudge = null;
+            if (boxes && fits) {
+              var box = {x: b.x + (nx - x) + tx, y: b.y + (ny - y) + ty, w: b.w, h: b.h, s: s};
+              for (var tries = 0; tries < 4; tries++) {
+                var hit = null;
+                for (var i = 0; i < boxes.length; i++) {
+                  var e = boxes[i];
+                  if (e.s === s && Math.abs(e.x - box.x) < 1.5 && Math.abs(e.y - box.y) < 1.5) continue; /* shadow/redraw */
+                  if (inter(box, e) > 0.15 * Math.min(box.w * box.h, e.w * e.h)) { hit = e; break; }
+                }
+                if (!hit) break;
+                var down = (hit.y + hit.h + 2) - box.y;          /* move below the other label */
+                var dy = (box.y + down + box.h <= this.height - pad) ? down : (hit.y - 2 - box.h) - box.y;
+                if (box.y + dy < pad) break;                     /* nowhere to go: leave it, the gate reports */
+                box.y += dy; ny += dy;
+                nudge = {dy: (nudge ? nudge.dy : 0) + dy, other: hit.s};
+              }
+              boxes.push(box);
+            }
+            if (nx !== x || ny !== y) {
+              this.__skLastOrig = {x: x, y: y}; this.__skLastNudge = nudge; a[1] = nx; a[2] = ny;
+            }
+          }
+        }
+      } catch (e) {}
+      return o.apply(this, a);
+    };
+  }
+  /* Number display for the numbers sketches print themselves. Most sketches
+     write `v.toFixed(2)` straight into p.text(...), SK.tiles or a DOM label,
+     which is a decimal POINT on every page (15-22 of 23 Russian pages per
+     model in the human review). On a page whose language writes a decimal
+     comma (SK_LOC) the wrappers below rewrite `digit.digit` to `digit,digit`
+     in the string handed to p.text and to createSpan / createP / createDiv /
+     createButton / Element.html(str). A finite non-integer NUMBER given to
+     p.text is rewritten the same way (p5 would print it with a point).
+
+     DISPLAY ONLY: no number is ever parsed back from these strings, slider
+     ranges and input values are untouched (createInput, createSlider and
+     .value() are not wrapped), the getter form of .html() is untouched, and
+     the markup inside an HTML string is skipped (SK_LOC.html).
+
+     KNOWN EDGE: the rule cannot tell a decimal from any other digit.digit, so
+     a date drawn as 01.10 reads 01,10 and a section number 2.1 reads 2,1.
+     Write those with another separator, or opt out for the whole page with
+     window.SK_LOCALIZE_NUMBERS = false (read on every call). SK.fmt is not
+     affected by that flag: it follows the page language only.
+
+     Installed once, idempotent (a flag on the p5 prototype), and installed
+     AFTER the text guard above, so the guard measures and the render gate's
+     recorder logs the string the reader actually sees. */
+  function localize(P) {
+    if (!P || !P.prototype) return;
+    var on = function () { return window.SK_LOCALIZE_NUMBERS !== false && SK_LOC.comma(); };
+    var proto = P.prototype;
+    if (!proto.__skLoc) {
+      proto.__skLoc = true;
+      var oText = proto.text;
+      if (typeof oText === 'function') proto.text = function (str) {
+        var a = arguments;
+        if (a.length && on()) {
+          var s = typeof str === 'string' ? str
+                : (typeof str === 'number' && isFinite(str) && str % 1 !== 0 ? String(str) : null);
+          if (s !== null) { a = Array.prototype.slice.call(arguments); a[0] = SK_LOC.text(s); }
+        }
+        return oText.apply(this, a);
+      };
+      ['createSpan', 'createP', 'createDiv', 'createButton'].forEach(function (name) {
+        var o = proto[name];
+        if (typeof o !== 'function') return;
+        proto[name] = function (s) {
+          var a = arguments;
+          if (typeof s === 'string' && on()) { a = Array.prototype.slice.call(arguments); a[0] = SK_LOC.html(s); }
+          return o.apply(this, a);
+        };
+      });
+    }
+    var E = P.Element && P.Element.prototype;
+    if (E && !E.__skLoc && typeof E.html === 'function') {
+      E.__skLoc = true;
+      var oHtml = E.html;
+      E.html = function (s) {                 /* the setter form only: html() reads innerHTML */
+        var a = arguments;
+        if (a.length && typeof s === 'string' && on()) { a = Array.prototype.slice.call(arguments); a[0] = SK_LOC.html(s); }
+        return oHtml.apply(this, a);
+      };
+    }
+  }
+  function install(P) {
+    /* window.SK_NO_GUARD: the --no-auto-fix ablation arm ships labels where the
+       sketch put them (src/config.py auto_fix) */
+    if (!(typeof window !== 'undefined' && window.SK_NO_GUARD)) { try { guard(P); } catch (e) {} }
+    try { localize(P); } catch (e) {}
+  }
+  if (typeof window === 'undefined') return;          /* Node: SK.fmt and the pure helpers only */
+  if (window.p5) install(window.p5);
+  else { try { var cur; Object.defineProperty(window, 'p5', {configurable: true,
+    get: function () { return cur; }, set: function (v) { cur = v; install(v); }}); } catch (e) {} }
+})();
+</script>
+
+<script>
+/* NextGenUI embed runtime (src/render/ngui.py): the micro answer as the
+   content of the host's "Персональный ответ" card, shipped as an iframe
+   srcdoc. Runs in <head>, after p5 + SimKit and before any widget mounts.
+
+   1. Theme. The host switches its palette at run time (:root[data-gamma=
+      brand|emerald|warm]) and its dark mode (:root.dark). A srcdoc iframe
+      without `sandbox` (or with allow-same-origin) shares the host's origin,
+      so we READ the host's tokens and watch its <html> for changes; nothing
+      is asked of the host. A cross-origin host posts
+      {type:'ngui-theme', gamma, dark, vars:{'--sbs-accent': ...}} instead.
+      A file opened on its own is drawn in the green gamma (emerald, the
+      owner's choice of 2026-10-15); ?gamma=brand|warm&dark=1 picks another.
+   2. Height. Embedded, the page posts {type:'ngui-resize', height} to the
+      parent whenever its height changes; the host sets the iframe's height.
+   3. Widgets. A p5 canvas is sized once, at mount (SK.canvas), and a sketch
+      draws with the colours it read then. When the holder's width changes
+      by >= 8 px (a window resize: the host's column runs from 232 to 628 px)
+      or the theme changes, the widget is mounted again -- its state resets,
+      which the owner accepted (2026-10-12). Tracked by wrapping window.p5,
+      so the page's own mount code (`var _sketch=...; new p5(`, the shape
+      the judge's extractor anchors on) is untouched.
+   4. Sliders. The filled part of a ui-slider track is a CSS variable (--p),
+      kept in step with the value.
+
+   Nothing here runs a model's code or reaches the network. */
+(function () {
+  'use strict';
+  var root = document.documentElement;
+  var embedded = true;
+  try { embedded = window.self !== window.top; } catch (e) { embedded = true; }
+  root.classList.add(embedded ? 'ngui-embedded' : 'ngui-standalone');
+
+  /* ---------------- theme ---------------- */
+  /* host token -> our token (src/render/ngui_embed.css) */
+  var MAP = [['--sbs-accent', '--sbs-accent'], ['--sbs-accent-strong', '--sbs-accent-strong'],
+             ['--sbs-accent-soft', '--sbs-accent-soft'], ['--sbs-brand', '--sbs-brand'],
+             ['--sbs-panel', '--ngui-panel'], ['--sbs-chip', '--ngui-chip'],
+             ['--sbs-chip-hover', '--ngui-chip-hover'],
+             ['--sberai-color-text-default', '--ngui-text'], ['--sberai-color-text-subtle', '--ngui-subtle'],
+             ['--sberai-color-background-raised', '--ngui-card'], ['--sberai-font-sans', '--sberai-font-sans']];
+  var applied = null;
+  var STANDALONE_GAMMA = 'emerald';
+  function apply(t) {
+    t = t || {};
+    var vars = t.vars || {}, key = JSON.stringify([t.gamma || '', !!t.dark, vars]);
+    if (key === applied) return false;
+    var first = applied === null;
+    applied = key;
+    if (t.gamma) root.setAttribute('data-gamma', String(t.gamma)); else root.removeAttribute('data-gamma');
+    if (t.dark) root.classList.add('dark'); else root.classList.remove('dark');
+    for (var i = 0; i < MAP.length; i++) {
+      var v = vars[MAP[i][0]];
+      if (v && String(v).trim()) root.style.setProperty(MAP[i][1], String(v).trim());
+      else root.style.removeProperty(MAP[i][1]);
+    }
+    return !first;
+  }
+  function hostDoc() {
+    if (!embedded) return null;
+    try { var d = window.parent.document; return d && d.documentElement ? d : null; } catch (e) { return null; }
+  }
+  function readHost(d) {
+    var r = d.documentElement, cs = d.defaultView.getComputedStyle(r), vars = {};
+    for (var i = 0; i < MAP.length; i++) {
+      var v = cs.getPropertyValue(MAP[i][0]);
+      if (v && v.trim()) vars[MAP[i][0]] = v.trim();
+    }
+    return {gamma: r.getAttribute('data-gamma') || '',
+            dark: r.classList.contains('dark') || r.getAttribute('data-sberai-theme') === 'dark',
+            vars: vars};
+  }
+  /* the host's @font-face rules (its font is not inherited across a frame) */
+  function copyFonts(d) {
+    var css = '';
+    for (var i = 0; i < d.styleSheets.length; i++) {
+      var sh = d.styleSheets[i], rules;
+      try { rules = sh.cssRules; } catch (e) { continue; }          /* a cross-origin sheet */
+      for (var j = 0; rules && j < rules.length; j++) {
+        if (rules[j].type !== 5) continue;                           /* CSSRule.FONT_FACE_RULE */
+        var t = rules[j].cssText;
+        if (sh.href) t = t.replace(/url\((['"]?)(?!data:|https?:|\/)([^'")]+)\1\)/g, function (m, q, u) {
+          try { return 'url("' + new URL(u, sh.href).href + '")'; } catch (e) { return m; } });
+        css += t + '\n';
+      }
+    }
+    if (!css) return;
+    var st = document.createElement('style'); st.id = 'ngui-host-fonts'; st.textContent = css;
+    (document.head || root).appendChild(st);
+  }
+  var host = hostDoc();
+  if (host) {
+    try { apply(readHost(host)); copyFonts(host); } catch (e) {}
+    try {
+      new MutationObserver(function () { try { if (apply(readHost(host))) rethemed(); } catch (e) {} })
+        .observe(host.documentElement, {attributes: true,
+                 attributeFilter: ['class', 'data-gamma', 'data-sberai-theme', 'style']});
+    } catch (e) {}
+  } else if (!embedded) {
+    /* the two parameters read by name: copying every URL key onto an object
+       let the URL name its properties (CodeQL js/remote-property-injection) */
+    var q = {};
+    try { var sp = new URLSearchParams(location.search);
+          q = {gamma: sp.get('gamma') || '', dark: sp.get('dark') || ''}; } catch (e) {}
+    /* opened on its own: the green gamma unless the URL asks for another */
+    apply({gamma: q.gamma || STANDALONE_GAMMA, dark: q.dark === '1' || q.dark === 'true'});
+  } else {
+    apply({});
+  }
+  window.addEventListener('message', function (e) {
+    var m = e.data;
+    /* only the host frame may retheme the page (standalone, window.parent is
+       the page itself): the values go through MAP into CSS properties only */
+    if (!m || m.type !== 'ngui-theme' || e.source !== window.parent) return;
+    if (m.gamma != null && typeof m.gamma !== 'string') return;
+    /* a same-origin host is READ (its tokens included); a message carries
+       fewer of them and would undo that, then remount for nothing */
+    if (host) return;
+    if (apply({gamma: m.gamma, dark: m.dark, vars: m.vars || {}})) rethemed();
+  });
+  function rethemed() {
+    try { if (window.SK && typeof SK.theme === 'function') SK.theme(true); } catch (e) {}
+    for (var i = 0; i < REG.length; i++) remount(REG[i]);
+    themeCharts();
+    progressAll();
+  }
+
+  /* ---------------- Plotly charts follow the theme ----------------
+     A chart is drawn once with Plotly's defaults (white ground, its own
+     colourway). Every plot is created through a wrapped Plotly.newPlot that
+     merges in the page tokens, and re-laid out when the theme changes. */
+  function cv(n) { try { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); } catch (e) { return ''; } }
+  function comma() { return /^(ru|uk|be|kk|de|fr|es|it|pt|pl|cs|nl|sv|fi|tr)/i.test(document.documentElement.lang || ''); }
+  function chartLayout() {
+    var line = cv('--ngui-line'), sub = cv('--ngui-subtle'), ink = cv('--ngui-text'), ff = cv('--sk-font') || 'system-ui, sans-serif';
+    var ax = {gridcolor: line, linecolor: line, zerolinecolor: line, zeroline: false, showline: false, fixedrange: true,
+              tickfont: {color: sub, size: 12, family: ff}, title: {font: {color: sub, size: 12, family: ff}},
+              automargin: true, ticks: ''};
+    return {
+      paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)',
+      colorway: cv('--sk-series').split(/[\s,]+/).filter(Boolean),
+      font: {family: ff, color: sub, size: 12},
+      /* decimal comma and a thin space for thousands on a Russian page */
+      separators: comma() ? ',\u2009' : '.,',
+      xaxis: ax, yaxis: JSON.parse(JSON.stringify(ax)),
+      legend: {font: {color: ink, size: 13, family: ff}, bgcolor: 'rgba(0,0,0,0)', orientation: 'h',
+               x: 0, xanchor: 'left', y: 1.02, yanchor: 'bottom', itemclick: false, itemdoubleclick: false},
+      hoverlabel: {bgcolor: cv('--ngui-card'), bordercolor: line, align: 'left',
+                   font: {color: ink, family: ff, size: 13}},
+      bargap: 0.35, bargroupgap: 0.12, barcornerradius: 4,
+      /* a swipe over a chart scrolls the page on a tablet instead of
+         zooming the plot: no drag modes, fixed ranges */
+      dragmode: false,
+      margin: {t: 8, r: 8, b: 32, l: 8}
+    };
+  }
+  function merge(a, b) {
+    for (var k in b) {
+      if (b[k] && typeof b[k] === 'object' && !Array.isArray(b[k]) && a[k] && typeof a[k] === 'object') merge(a[k], b[k]);
+      else if (!(k in a)) a[k] = b[k];
+    }
+    return a;
+  }
+  /* one hover box, no second "trace name" box: Plotly paints that one in the
+     trace colour on a light ground, unreadable in the dark theme */
+  function themeTraces(data) {
+    var many = (data || []).length > 1;
+    (data || []).forEach(function (t) {
+      if (!t) return;
+      if (!t.hovertemplate) {
+        var name = many && t.name ? '<b>%{fullData.name}</b><br>' : '';
+        var numX = (t.x || []).length && typeof t.x[0] === 'number';
+        var onlyMarkers = t.mode === 'markers';
+        t.hovertemplate = name + (onlyMarkers && numX ? '%{x}; %{y}' : '%{x} \u2014 %{y}') + '<extra></extra>';
+      }
+      if (t.type === 'bar') { t.marker = t.marker || {}; t.marker.line = t.marker.line || {width: 0}; }
+      if (t.type === 'scatter') {
+        t.line = t.line || {}; if (t.line.width === undefined) t.line.width = 2.5;
+        if (t.line.shape === undefined && t.mode !== 'markers') t.line.shape = 'spline';
+        t.marker = t.marker || {};
+        if (t.marker.size === undefined) t.marker.size = t.mode === 'markers' ? 9 : 6;
+        if (t.mode === 'markers' && t.marker.opacity === undefined) t.marker.opacity = 0.9;
+      }
+    });
+    return data;
+  }
+  function wrapPlotly() {
+    var P = window.Plotly;
+    if (!P || P.__ngui) return;
+    var np = P.newPlot;
+    P.newPlot = function (el, data, layout, config) {
+      var L = merge(JSON.parse(JSON.stringify(layout || {})), chartLayout());
+      L.paper_bgcolor = 'rgba(0,0,0,0)'; L.plot_bgcolor = 'rgba(0,0,0,0)';
+      if ((data || []).length > 1) L.margin.t = Math.max(L.margin.t || 0, 36);
+      var C = merge(config || {}, {displayModeBar: false, responsive: true, scrollZoom: false, doubleClick: false});
+      var node = typeof el === 'string' ? document.getElementById(el) : el;
+      if (node) chartTable(node, data);
+      return np.call(P, el, themeTraces(data), L, C);
+    };
+    P.__ngui = true;
+  }
+  function themeCharts() {
+    if (!window.Plotly) return;
+    var L = chartLayout();
+    var upd = {paper_bgcolor: L.paper_bgcolor, plot_bgcolor: L.plot_bgcolor, colorway: L.colorway,
+               font: L.font, 'legend.font': L.legend.font, hoverlabel: L.hoverlabel};
+    ['xaxis', 'yaxis'].forEach(function (a) {
+      for (var k in L[a]) upd[a + '.' + k] = L[a][k];
+    });
+    document.querySelectorAll('.js-plotly-plot').forEach(function (el) {
+      try { Plotly.relayout(el, upd); } catch (e) {}
+    });
+  }
+  wrapPlotly();
+  document.addEventListener('DOMContentLoaded', wrapPlotly);
+
+  /* ---------------- mermaid pies follow the palette ----------------
+     mermaid paints each slice (and its legend swatch) with a fixed colour;
+     map every distinct colour, in slice order, to --ngui-s1..6 */
+  function paintPie(svg) {
+    if (svg.__ngui) return;
+    var sl = svg.querySelectorAll('.pieCircle');
+    if (!sl.length) return;
+    svg.__ngui = 1;
+    var idx = {}, n = 0;
+    var cx = document.createElement('canvas').getContext('2d');
+    function orig(el) {           /* normalised: hsl(), rgb() and #hex compare equal */
+      var c = el.getAttribute('fill') || el.style.fill || '';
+      try { cx.fillStyle = '#000'; cx.fillStyle = c; return cx.fillStyle; } catch (e) { return c; }
+    }
+    function v(k) { return k < 6 ? 'var(--ngui-s' + (k + 1) + ')' : (k % 2 ? 'var(--ngui-faint)' : 'var(--ngui-subtle)'); }
+    sl.forEach(function (el) { var c = orig(el); if (!(c in idx)) idx[c] = n++; el.style.setProperty('fill', v(idx[c]), 'important'); });
+    svg.querySelectorAll('.legend rect').forEach(function (el) {
+      var c = orig(el); if (c in idx) { el.style.setProperty('fill', v(idx[c]), 'important'); el.style.setProperty('stroke', v(idx[c]), 'important'); } });
+  }
+  /* ---------------- accessibility of the generated widgets ----------------
+     The shared renderer emits some controls without a name and feedback
+     without a live region; name them from their section's heading here, so
+     the embed is complete without changing the markup other pages share. */
+  var sr = 'position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0';
+  function heading(el) {
+    var s = el.closest && el.closest('section');
+    var h = s && s.querySelector('h2, h3');
+    return h ? h.textContent.trim() : '';
+  }
+  function a11y() {
+    /* 4.1.2: every slider and select has a name */
+    document.querySelectorAll('input[type=range], select').forEach(function (el) {
+      if (el.getAttribute('aria-label') || el.getAttribute('aria-labelledby') || (el.labels && el.labels.length)) return;
+      var h = heading(el); if (h) el.setAttribute('aria-label', h);
+    });
+    /* 4.1.3: the result of a quiz, a prediction and a slider is announced */
+    document.querySelectorAll('.qfb, .pfb').forEach(function (el) { if (!el.getAttribute('role')) el.setAttribute('role', 'status'); });
+    document.querySelectorAll('.slider-out').forEach(function (el) { el.setAttribute('aria-live', 'polite'); });
+    /* 1.1.1: a simulation canvas is an image named by its section and caption */
+    document.querySelectorAll('.sim-holder canvas').forEach(function (c) {
+      var cap = c.parentNode && c.parentNode.querySelector('.sk-caption, .sim-caption');
+      var name = [heading(c), cap ? cap.textContent.trim() : ''].filter(Boolean).join('. ');
+      if (name && c.getAttribute('aria-label') !== name) { c.setAttribute('role', 'img'); c.setAttribute('aria-label', name); }
+    });
+    /* 2.1.1: a diagram that scrolls sideways can be scrolled from the keyboard */
+    document.querySelectorAll('.mermaid').forEach(function (m) {
+      var over = m.scrollWidth > m.clientWidth + 1;
+      if (over && !m.hasAttribute('tabindex')) {
+        /* named by its section heading only: a fixed English fallback would mix
+           the page language, and a focusable scroller needs no name */
+        var h = heading(m);
+        m.setAttribute('tabindex', '0');
+        if (h) { m.setAttribute('role', 'region'); m.setAttribute('aria-label', h); }
+      } else if (!over && m.getAttribute('tabindex') === '0') {
+        m.removeAttribute('tabindex'); m.removeAttribute('role'); m.removeAttribute('aria-label');
+      }
+    });
+  }
+  /* 1.1.1: a chart's numbers as a table a screen reader can read */
+  function chartTable(el, data) {
+    try {
+      var old = el.parentNode.querySelector('[data-ngui-chart="' + el.id + '"]');
+      if (old) old.remove();
+      /* a table sizes to its content whatever its width: the 1 px box is a div */
+      var box = document.createElement('div'); box.setAttribute('data-ngui-chart', el.id); box.style.cssText = sr;
+      var t = document.createElement('table'); box.appendChild(t);
+      var cap = document.createElement('caption'); cap.textContent = heading(el); t.appendChild(cap);
+      (data || []).forEach(function (tr) {
+        (tr.x || []).forEach(function (x, k) {
+          var row = document.createElement('tr');
+          [tr.name, x, (tr.y || [])[k]].forEach(function (v, j) {
+            if (j === 0 && !v) return;
+            var c = document.createElement(j < 2 ? 'th' : 'td'); c.textContent = v === undefined ? '' : String(v); row.appendChild(c);
+          });
+          t.appendChild(row);
+        });
+      });
+      el.setAttribute('aria-hidden', 'true');
+      el.parentNode.insertBefore(box, el.nextSibling);
+    } catch (e) {}
+  }
+  var a11yTimer = null;
+  function a11ySoon() { if (a11yTimer) return; a11yTimer = setTimeout(function () { a11yTimer = null; try { a11y(); } catch (e) {} }, 120); }
+  document.addEventListener('DOMContentLoaded', function () {
+    a11y();
+    try { new MutationObserver(a11ySoon).observe(document.body, {childList: true, subtree: true}); } catch (e) {}
+    window.addEventListener('resize', a11ySoon);
+  });
+
+  document.addEventListener('DOMContentLoaded', function () {
+    var ms = document.querySelectorAll('.mermaid');
+    if (!ms.length) return;
+    var scan = function () { ms.forEach(function (m) { var s = m.querySelector('svg'); if (s) paintPie(s); }); };
+    try { ms.forEach(function (m) { new MutationObserver(scan).observe(m, {childList: true, subtree: true}); }); } catch (e) {}
+    scan();
+  });
+
+  /* ---------------- widgets: track, remount ---------------- */
+  var REG = [], P5 = null, ro = null;
+  function wrapP5() {
+    var P = window.p5;
+    if (!P || P.__ngui) return !!P;
+    P5 = P;
+    var W = function (sketch, node, sync) {
+      var inst = new P(sketch, node, sync);
+      if (node && node.nodeType === 1) track(inst, sketch, node);
+      return inst;
+    };
+    W.prototype = P.prototype;
+    Object.getOwnPropertyNames(P).forEach(function (k) {
+      if (k === 'prototype' || k === 'length' || k === 'name' || k === 'arguments' || k === 'caller') return;
+      try { Object.defineProperty(W, k, Object.getOwnPropertyDescriptor(P, k)); } catch (e) {}
+    });
+    W.__ngui = true;
+    window.p5 = W;
+    return true;
+  }
+  function track(inst, sketch, node) {
+    var e = {inst: inst, sketch: sketch, node: node, w: Math.round(node.clientWidth), t: 0};
+    REG.push(e);
+    if (!ro && window.ResizeObserver) ro = new ResizeObserver(onResize);
+    if (ro) ro.observe(node);
+    grow(e);
+  }
+  function grow(e) {
+    /* controls placed with .position(x,y) do not add to the holder's height
+       (the renderer's own mount does the same once) */
+    setTimeout(function () {
+      if (e.node.scrollHeight > e.node.offsetHeight) e.node.style.minHeight = e.node.scrollHeight + 'px';
+    }, 400);
+  }
+  function remount(e) {
+    try { e.inst.remove(); } catch (x) {}
+    e.node.style.minHeight = '';
+    while (e.node.firstChild) e.node.removeChild(e.node.firstChild);
+    try { e.inst = new P5(e.sketch, e.node); }
+    catch (x) { console.error('sim ' + (e.node.id || '') + ' error:', x); }
+    e.w = Math.round(e.node.clientWidth);
+    grow(e);
+    progressSoon();
+  }
+  function onResize(entries) {
+    for (var i = 0; i < entries.length; i++) {
+      var node = entries[i].target, e = null;
+      for (var j = 0; j < REG.length; j++) if (REG[j].node === node) e = REG[j];
+      if (!e || Math.abs(Math.round(node.clientWidth) - e.w) < 8) continue;
+      clearTimeout(e.t);
+      e.t = setTimeout((function (en) { return function () {
+        if (Math.abs(Math.round(en.node.clientWidth) - en.w) >= 8) remount(en); }; })(e), 150);
+    }
+  }
+  wrapP5();
+  document.addEventListener('DOMContentLoaded', wrapP5);
+
+  /* ---------------- slider fill ---------------- */
+  function progress(r) {
+    var mn = r.min === '' ? 0 : +r.min, mx = r.max === '' ? 100 : +r.max, v = +r.value;
+    var p = mx > mn ? (v - mn) / (mx - mn) * 100 : 0;
+    r.style.setProperty('--p', Math.max(0, Math.min(100, isFinite(p) ? p : 0)) + '%');
+  }
+  function progressAll() {
+    var rs = document.querySelectorAll('input[type=range]');
+    for (var i = 0; i < rs.length; i++) progress(rs[i]);
+  }
+  var pending = false;
+  function progressSoon() {
+    if (pending) return;
+    pending = true;
+    setTimeout(function () { pending = false; progressAll(); }, 30);
+  }
+  ['input', 'change'].forEach(function (ev) {
+    document.addEventListener(ev, function (e) {
+      if (e.target && e.target.type === 'range') progress(e.target); }, true);
+  });
+  document.addEventListener('click', progressSoon, true);
+  document.addEventListener('DOMContentLoaded', function () {
+    progressAll();
+    try { new MutationObserver(progressSoon).observe(document.body, {childList: true, subtree: true}); } catch (e) {}
+  });
+
+  /* ---------------- height ---------------- */
+  if (embedded) {
+    var lastH = -1;
+    var post = function () {
+      if (!document.body) return;
+      var h = Math.ceil(document.body.getBoundingClientRect().height);
+      if (h === lastH) return;
+      lastH = h;
+      /* '*': an srcdoc or sandboxed frame cannot know its host's origin, and
+         the message carries nothing but this page's height */
+      try { window.parent.postMessage({type: 'ngui-resize', height: h}, '*'); } catch (e) {}
+    };
+    document.addEventListener('DOMContentLoaded', function () {
+      post();
+      if (window.ResizeObserver) new ResizeObserver(post).observe(document.body);
+    });
+    window.addEventListener('load', post);
+  }
+  window.NGUI = {apply: function (t) { if (apply(t)) rethemed(); }, remountAll: rethemed, widgets: REG};
+})();
+</script>
+</head>
+<body class="ngui">
+<main class="ngui-answer">
+<p class="ngui-title" data-testid="narrative">По условной оценке один запрос стоит сотни джоулей и доли миллилитра воды, но миллион запросов в сутки превращает это в сотни киловатт-часов и сотни литров — точная цифра зависит от энергии запроса и коэффициента PUE дата-центра.</p>
+<section data-block="simulation-0" class="block full"><h2>Энергия и вода: от запроса к суткам</h2><p>Задайте энергию запроса, коэффициент PUE и число запросов в день — полосы покажут расход на один запрос и за сутки.</p><div id="sim0" class="sim-holder" data-block-index="0" data-widget="p5"></div></section>
+<section data-block="callout-1" class="block callout"><h2>От джоулей на запрос к литрам в сутки</h2><p>Электричество дата-центра делится на две части: то, что уходит на сами вычисления, и накладные расходы на охлаждение и потери. Их отношение и есть PUE (power usage effectiveness): у парков Google в 2025 году он равен 1,09, то есть на каждый джоуль расчёта добавляется 0,09 джоуля инфраструктуры. Почти вся эта энергия превращается в тепло, а тепло в испарительных системах охлаждения уносит вода: на один джоуль приходится около 0,44 мг испарённой воды (теплота парообразования 2,26 МДж/кг). Поэтому счёт на один запрос скромный, но он умножается на число запросов: подвиньте ползунок «Запросов в день» — и доли миллилитра станут сотнями литров. Числа на странице — условная модель: энергию запроса задаёте вы, а не измерение конкретной системы.</p></section><section class="block sources"><h2>🔗</h2><ul><li><a href="https://en.wikipedia.org/wiki/Data_center" target="_blank" rel="noopener">Data center</a></li><li><a href="https://en.wikipedia.org/wiki/Google_data_centers" target="_blank" rel="noopener">Google data centers</a></li></ul></section>
+</main>
+<script>
+(function(){
+  function mount(){
+    if(typeof p5==='undefined'){ return setTimeout(mount,80); }
+    var holder=document.getElementById('sim0'); if(!holder) return;
+    try{
+      var _user=new Function('return ('+"function(p){ let eS,pS,nS;\np.setup=function(){SK.canvas(p,400);SK.caption(p,'\u0421\u043b\u0435\u0432\u0430 \u2014 \u0440\u0430\u0441\u0445\u043e\u0434 \u043d\u0430 \u043e\u0434\u0438\u043d \u0437\u0430\u043f\u0440\u043e\u0441 (\u043b\u0438\u043d\u0435\u0439\u043d\u0430\u044f \u0448\u043a\u0430\u043b\u0430), \u0441\u043f\u0440\u0430\u0432\u0430 \u2014 \u0437\u0430 \u0441\u0443\u0442\u043a\u0438 (\u043b\u043e\u0433\u0430\u0440\u0438\u0444\u043c\u0438\u0447\u0435\u0441\u043a\u0430\u044f \u0448\u043a\u0430\u043b\u0430 \u043e\u0442 0,1 \u0434\u043e 10 000)');eS=SK.slider(p,'\u042d\u043d\u0435\u0440\u0433\u0438\u044f \u0432\u044b\u0447\u0438\u0441\u043b\u0435\u043d\u0438\u0439 \u043d\u0430 \u0437\u0430\u043f\u0440\u043e\u0441',200,2000,800,50,{hint:'\u0441\u043a\u043e\u043b\u044c\u043a\u043e \u044d\u043b\u0435\u043a\u0442\u0440\u0438\u0447\u0435\u0441\u0442\u0432\u0430 \u0443\u0445\u043e\u0434\u0438\u0442 \u043d\u0430 \u0441\u0430\u043c \u0440\u0430\u0441\u0447\u0451\u0442; \u0447\u0438\u0441\u043b\u0430 \u0443\u0441\u043b\u043e\u0432\u043d\u044b\u0435',unit:'\u0414\u0436'});pS=SK.slider(p,'\u041a\u043e\u044d\u0444\u0444\u0438\u0446\u0438\u0435\u043d\u0442 PUE',1.05,1.6,1.09,0.01,{hint:'\u0432\u0441\u044f \u043c\u043e\u0449\u043d\u043e\u0441\u0442\u044c \u0434\u0430\u0442\u0430-\u0446\u0435\u043d\u0442\u0440\u0430 \u043a \u043c\u043e\u0449\u043d\u043e\u0441\u0442\u0438 \u0432\u044b\u0447\u0438\u0441\u043b\u0435\u043d\u0438\u0439; 1,09 \u2014 \u0441\u0440\u0435\u0434\u043d\u0435\u0435 \u0443 Google \u0432 2025 \u0433\u043e\u0434\u0443',digits:2});nS=SK.slider(p,'\u0417\u0430\u043f\u0440\u043e\u0441\u043e\u0432 \u0432 \u0434\u0435\u043d\u044c',10,5000,1000,10,{hint:'\u0441\u043a\u043e\u043b\u044c\u043a\u043e \u0437\u0430\u043f\u0440\u043e\u0441\u043e\u0432 \u043e\u0431\u0441\u043b\u0443\u0436\u0438\u0432\u0430\u0435\u0442 \u0441\u0435\u0440\u0432\u0438\u0441 \u0437\u0430 \u0441\u0443\u0442\u043a\u0438',unit:'\u0442\u044b\u0441.'});};\np.draw=function(){SK.bg(p);const L=SK.layout(p,'stage|side'),S=L.stage,D=L.side;const E=+eS.value(),P=+pS.value(),N=+nS.value()*1000;const per=E*P,day=per*N,kWh=day/3.6e6,lit=day/2.26e6,ml=per/2260;const x0=S.x+8,x1=S.x+S.w-8;\nconst row=(y,v,max,c,lab)=\u003e{p.noStroke();p.fill(SK.col(p,c,40));p.rect(x0,y,x1-x0,20,6);p.fill(SK.col(p,c));p.rect(x0,y,(x1-x0)*SK.clamp(v/max,0,1),20,6);SK.label(p,lab,x0+4,y-6,{c:c,size:'s'});};\nrow(S.y+S.h*0.22,per,3200,0,'\u044d\u043b\u0435\u043a\u0442\u0440\u0438\u0447\u0435\u0441\u0442\u0432\u043e \u043d\u0430 \u0437\u0430\u043f\u0440\u043e\u0441: '+SK.fmt(per,0,'\u0414\u0436'));\nrow(S.y+S.h*0.52,ml,1.5,1,'\u0432\u043e\u0434\u0430 \u043d\u0430 \u0437\u0430\u043f\u0440\u043e\u0441: '+SK.fmt(ml,3,'\u043c\u043b'));\np.stroke(SK.col(p,'dim',120));p.strokeWeight(1);p.line(x0,S.y+S.h*0.72,x1,S.y+S.h*0.72);\nconst lo=-1,hi=4,X=v=\u003ex0+(x1-x0)*(Math.log10(v)-lo)/(hi-lo);\nfor(let e=lo;e\u003c=hi;e++){p.stroke(SK.col(p,'dim',90));p.line(X(Math.pow(10,e)),S.y+S.h*0.72,X(Math.pow(10,e)),S.y+S.h*0.78);SK.label(p,e\u003c0?'0,1':SK.fmt(Math.pow(10,e),0),X(Math.pow(10,e)),S.y+S.h*0.80,{c:'dim',size:'s',align:'center'});}\nconst yb=S.y+S.h*0.90;p.noStroke();p.fill(SK.col(p,0,40));p.rect(x0,yb-14,x1-x0,14,5);p.fill(SK.col(p,0));p.rect(x0,yb-14,X(kWh)-x0,14,5);p.fill(SK.col(p,1));p.rect(x0,yb+2,X(lit)-x0,14,5);\nSK.label(p,'\u0437\u0430 \u0441\u0443\u0442\u043a\u0438: '+SK.fmt(kWh,0,'\u043a\u0412\u0442\u00b7\u0447')+' \u0438 '+SK.fmt(lit,0,'\u043b'),x0+4,yb-20,{c:'ink',size:'s'});\nSK.panel(p,[['\u043d\u0430 \u0437\u0430\u043f\u0440\u043e\u0441',  'accent'],['\u0432\u044b\u0447\u0438\u0441\u043b\u0435\u043d\u0438\u044f '+SK.fmt(E,0,'\u0414\u0436'),'ink'],['\u043e\u0445\u043b\u0430\u0436\u0434\u0435\u043d\u0438\u0435 '+SK.fmt(per-E,0,'\u0414\u0436'),'ink'],['\u0438\u0442\u043e\u0433\u043e '+SK.fmt(per,0,'\u0414\u0436'),'accent'],['\u0432\u043e\u0434\u0430 '+SK.fmt(ml,3,'\u043c\u043b'),'ink']],D);\nSK.tiles(p,[['\u042d\u043d\u0435\u0440\u0433\u0438\u044f \u043d\u0430 \u0437\u0430\u043f\u0440\u043e\u0441',SK.fmt(per,0,'\u0414\u0436')],['\u0412\u043e\u0434\u0430 \u043d\u0430 \u0437\u0430\u043f\u0440\u043e\u0441',SK.fmt(ml,3,'\u043c\u043b')],['\u042d\u043d\u0435\u0440\u0433\u0438\u044f \u0437\u0430 \u0441\u0443\u0442\u043a\u0438',SK.fmt(kWh,0,'\u043a\u0412\u0442\u00b7\u0447'),true],['\u0412\u043e\u0434\u0430 \u0437\u0430 \u0441\u0443\u0442\u043a\u0438',SK.fmt(lit,0,'\u043b'),true]]);}; }"+')')();
+      var _sketch=function(p){
+        _user(p);
+        var _s=p.setup,_d=p.draw;
+        if(typeof _s==='function') p.setup=function(){ try{ return _s.apply(this,arguments); }catch(e){ console.error('sketch #sim0 setup error:',e); try{p.noLoop();}catch(_){} } };
+        if(typeof _d==='function') p.draw=function(){ try{ return _d.apply(this,arguments); }catch(e){ console.error('sketch #sim0 draw error:',e); try{p.noLoop();}catch(_){} } };
+      };
+      new p5(_sketch, holder);
+      // Controls placed with .position(x,y) are absolute and don't add to the
+      // holder's height; grow it so they don't overlap the next section.
+      setTimeout(function(){
+        if(holder.scrollHeight>holder.offsetHeight)
+          holder.style.minHeight=holder.scrollHeight+'px';
+      },400);
+    }catch(e){ console.error('sim sim0 error:',e);
+      holder.innerHTML='<p class="sim-caption">⚠</p>'; }
+  }
+  mount();
+})();
+</script>
+<script type="application/json" id="page-manifest">{"v": 1, "blocks": [{"index": 0, "type": "simulation", "rendered_as": "simulation", "anchor": "simulation-0", "heading": "\u042d\u043d\u0435\u0440\u0433\u0438\u044f \u0438 \u0432\u043e\u0434\u0430: \u043e\u0442 \u0437\u0430\u043f\u0440\u043e\u0441\u0430 \u043a \u0441\u0443\u0442\u043a\u0430\u043c", "holder": "sim0", "widget": "p5"}, {"index": 1, "type": "callout", "rendered_as": "callout", "anchor": "callout-1", "heading": "\u041e\u0442 \u0434\u0436\u043e\u0443\u043b\u0435\u0439 \u043d\u0430 \u0437\u0430\u043f\u0440\u043e\u0441 \u043a \u043b\u0438\u0442\u0440\u0430\u043c \u0432 \u0441\u0443\u0442\u043a\u0438"}]}</script>
+</body>
+</html>
